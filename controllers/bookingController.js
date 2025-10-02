@@ -1252,7 +1252,8 @@ exports.markAsPaid = asyncHandler(async (req, res) => {
 });
 
 /**
- * Cancel booking
+ * Cancel booking...
+ * ...
  */
 exports.cancelBooking = asyncHandler(async (req, res) => {
     const { bookingId } = req.params;
@@ -1443,6 +1444,7 @@ exports.completeJourney = asyncHandler(async (req, res) => {
     console.log('✅ [Complete Journey] Booking marked as COMPLETED');
 
     // Update passenger statistics
+    //update passenger statistics...
     const passenger = await User.findById(booking.passenger._id);
     if (passenger && passenger.statistics) {
         passenger.statistics.completedRides = (passenger.statistics.completedRides || 0) + 1;
