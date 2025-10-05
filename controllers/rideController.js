@@ -18,24 +18,28 @@ const axios = require('axios');
 exports.showPostRidePage = asyncHandler(async (req, res) => {
     const user = await User.findById(req.user._id);
 
+    // Only riders can post rides
     if (user.role !== 'RIDER') {
         req.flash('error', 'Only riders can post rides');
         return res.redirect('/user/dashboard');
     }
 
-    // Check if profile is complete
-    if (!user.vehicles || user.vehicles.length === 0) {
+    // Ensure profile is complete
+    const hasVehicles = Array.isArray(user.vehicles) && user.vehicles.length > 0;
+    if (!hasVehicles) {
         req.flash('warning', 'Please complete your profile and add vehicle details first');
         return res.redirect('/user/complete-profile');
     }
 
-    // Check if documents are uploaded
-    if (!user.documents?.driverLicense?.frontImage || !user.documents?.governmentId?.frontImage) {
+    // Ensure documents are uploaded
+    const hasDriverLicense = user.documents?.driverLicense?.frontImage;
+    const hasGovId = user.documents?.governmentId?.frontImage;
+    if (!hasDriverLicense || !hasGovId) {
         req.flash('warning', 'Please upload your verification documents first');
         return res.redirect('/user/upload-documents');
     }
 
-    // Check if verified
+    // Ensure user is verified
     if (user.verificationStatus !== 'VERIFIED') {
         return res.render('error', {
             title: 'Verification Pending',
@@ -43,10 +47,9 @@ exports.showPostRidePage = asyncHandler(async (req, res) => {
         });
     }
 
-    // Get approved vehicles
+    // Filter approved vehicles
     const approvedVehicles = user.vehicles.filter(v => v.status === 'APPROVED');
 
-    // If no approved vehicles, show error
     if (approvedVehicles.length === 0) {
         return res.render('error', {
             title: 'No Approved Vehicles',
@@ -54,12 +57,14 @@ exports.showPostRidePage = asyncHandler(async (req, res) => {
         });
     }
 
+    // Render the post ride page
     res.render('rides/post-ride', {
         title: 'Post a Ride - LANE Carpool',
         user,
         vehicles: approvedVehicles
     });
 });
+
 
 /**
  * Post a new ride
