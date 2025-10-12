@@ -46,7 +46,21 @@ async function triggerSOSAlert(rideId = null, bookingId = null) {
     
     try {
         // Get current location
+        console.log('🔍 Getting current location...');
         const location = await getCurrentLocation();
+        console.log('📍 Location obtained:', location);
+        
+        if (!location || !location.latitude || !location.longitude) {
+            throw new Error('Failed to get valid location coordinates');
+        }
+        
+        console.log('📤 Sending SOS request with:', {
+            rideId,
+            bookingId,
+            latitude: location.latitude,
+            longitude: location.longitude,
+            accuracy: location.accuracy
+        });
         
         const response = await fetch('/sos/trigger', {
             method: 'POST',
