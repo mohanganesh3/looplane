@@ -464,8 +464,23 @@ setInterval(() => {
 }, 60000); // Update every minute
 
 // Initialize map on page load
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
+    // Request all permissions upfront
+    const permissionManager = new PermissionManager();
+    
+    // Check if permissions already granted
+    const currentStatus = await permissionManager.checkPermissionStatus();
+    
+    if (!currentStatus.location.granted) {
+        // Show permission modal
+        await permissionManager.requestAllPermissions();
+    } else {
+        console.log('✅ Location permission already granted');
+    }
+    
+    // Initialize map regardless (will work better with permissions)
     initMap();
+    
     // Fix grey map (Leaflet needs a size invalidate after render)
     setTimeout(() => {
         try { map.invalidateSize(); } catch (e) {}
