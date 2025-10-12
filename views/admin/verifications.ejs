@@ -209,7 +209,7 @@
         <div class="admin-content">
             <% if (requests && requests.length > 0) { %>
                 <% requests.forEach(request => { %>
-                    <div class="verification-card">
+                    <div class="verification-card" data-user-id="<%= request._id %>">
                         <div class="verification-header">
                             <div class="user-info-inline">
                                 <img src="<%= request.profile.photo || '/images/default-avatar.png' %>" 
@@ -286,10 +286,10 @@
                             <button class="btn btn-view" onclick="viewFullDetails('<%= request._id %>')">
                                 <i class="fas fa-eye"></i> View Full Details
                             </button>
-                            <button class="btn btn-success" onclick="approveVerification('<%= request._id %>')">
+                            <button class="btn btn-success" onclick="approveVerificationXHR('<%= request._id %>')">
                                 <i class="fas fa-check"></i> Approve
                             </button>
-                            <button class="btn btn-danger" onclick="rejectVerification('<%= request._id %>')">
+                            <button class="btn btn-danger" onclick="rejectVerificationXHR('<%= request._id %>')">
                                 <i class="fas fa-times"></i> Reject
                             </button>
                         </div>
@@ -300,9 +300,7 @@
                 <% if (pagination.pages > 1) { %>
                     <div style="display: flex; justify-content: center; gap: 10px; margin-top: 30px;">
                         <% for (let i = 1; i <= pagination.pages; i++) { %>
-                            <a href="?page=<%= i %>" 
-                               class="btn <%= i === pagination.page ? 'btn-primary' : '' %>" 
-                               style="padding: 8px 16px; background: <%= i === pagination.page ? '#6366f1' : '#e5e7eb' %>; color: <%= i === pagination.page ? 'white' : '#374151' %>;">
+                            <a href="?page=<%= i %>" class="btn <%= i === pagination.page ? 'btn-primary' : '' %>">
                                 <%= i %>
                             </a>
                         <% } %>
@@ -349,54 +347,69 @@
             window.location.href = `/admin/verifications/${userId}`;
         }
 
-        // Approve Verification
-        async function approveVerification(userId) {
+        // Approve Verification (XHR)
+        function approveVerificationXHR(userId) {
             if (!confirm('Are you sure you want to APPROVE this driver verification?')) return;
-            
-            try {
-                const response = await fetch(`/admin/verifications/${userId}/approve`, {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'}
-                });
-                
-                const data = await response.json();
-                if (data.success) {
-                    alert('✅ Driver verification approved successfully!');
-                    window.location.reload();
-                } else {
-                    alert('❌ Error: ' + data.message);
+
+            const xhr = new XMLHttpRequest();
+            xhr.open('POST', `/admin/verifications/${userId}/approve`, true);
+            xhr.setRequestHeader('Content-Type', 'application/json;charset=UTF-8');
+            xhr.setRequestHeader('X-Requested-With', 'XMLHttpRequest');
+
+            xhr.onload = function () {
+                try {
+                    const res = JSON.parse(xhr.responseText);
+                    if (xhr.status >= 200 && xhr.status < 300 && res.success) {
+                        alert('✅ Driver verification approved successfully!');
+                        const card = document.querySelector(`[data-user-id="${userId}"]`);
+                        if (card) card.remove();
+                    } else {
+                        alert('❌ Error: ' + (res.message || 'Failed to approve'));
+                    }
+                } catch (err) {
+                    alert('❌ Invalid server response');
                 }
-            } catch (error) {
+            };
+
+            xhr.onerror = function () {
                 alert('❌ Error approving verification');
-                console.error(error);
-            }
+            };
+
+            xhr.send(JSON.stringify({}));
         }
 
-        // Reject Verification
-        async function rejectVerification(userId) {
+        // Reject Verification (XHR)
+        function rejectVerificationXHR(userId) {
             const reason = prompt('Enter reason for rejection:');
             if (!reason) return;
-            
+
             if (!confirm('Are you sure you want to REJECT this driver verification?')) return;
-            
-            try {
-                const response = await fetch(`/admin/verifications/${userId}/reject`, {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({ reason })
-                });
-                
-                const data = await response.json();
-                if (data.success) {
-                    alert('✅ Driver verification rejected');
-                    window.location.reload();
-                } else {
-                    alert('❌ Error: ' + data.message);
+
+            const xhr = new XMLHttpRequest();
+            xhr.open('POST', `/admin/verifications/${userId}/reject`, true);
+            xhr.setRequestHeader('Content-Type', 'application/json;charset=UTF-8');
+            xhr.setRequestHeader('X-Requested-With', 'XMLHttpRequest');
+
+            xhr.onload = function () {
+                try {
+                    const res = JSON.parse(xhr.responseText);
+                    if (xhr.status >= 200 && xhr.status < 300 && res.success) {
+                        alert('✅ Driver verification rejected');
+                        const card = document.querySelector(`[data-user-id="${userId}"]`);
+                        if (card) card.remove();
+                    } else {
+                        alert('❌ Error: ' + (res.message || 'Failed to reject'));
+                    }
+                } catch (err) {
+                    alert('❌ Invalid server response');
                 }
-            } catch (error) {
+            };
+
+            xhr.onerror = function () {
                 alert('❌ Error rejecting verification');
-                console.error(error);
-            }
+            };
+
+            xhr.send(JSON.stringify({ reason }));
         }
 
         // Close Modal

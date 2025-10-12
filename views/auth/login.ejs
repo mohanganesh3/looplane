@@ -81,49 +81,66 @@
     </div>
 </div>
 
+
 <script>
-    document.getElementById('loginForm').addEventListener('submit', async (e) => {
+    document.getElementById('loginForm').addEventListener('submit', function (e) {
         e.preventDefault();
-        
-        const btn = document.getElementById('loginBtnText');
+
+        const btnText = document.getElementById('loginBtnText');
         const spinner = document.getElementById('loginSpinner');
-        btn.textContent = 'Logging in...';
+        btnText.textContent = 'Logging in...';
         spinner.classList.remove('hidden');
-        
-        const formData = new FormData(e.target);
-        const data = Object.fromEntries(formData);
-        
-        try {
-            const response = await fetch('/auth/login', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(data)
-            });
-            
-            const result = await response.json();
-            
-            if (response.ok && result.success) {
-                window.location.href = result.redirectUrl || '/user/dashboard';
-            } else {
-                // If user needs to verify OTP, redirect to OTP page
-                if (result.redirectUrl === '/auth/verify-otp') {
-                    showAlert(result.message, 'info');
-                    setTimeout(() => {
-                        window.location.href = result.redirectUrl;
-                    }, 1500);
-                } else {
-                    // Show the actual error message from the server
-                    showAlert(result.message || 'Login failed', 'error');
-                    btn.textContent = 'Login';
-                    spinner.classList.add('hidden');
-                }
-            }
-        } catch (error) {
-            console.error('Login error:', error);
-            showAlert('Network error. Please try again.', 'error');
-            btn.textContent = 'Login';
+
+        const form = e.target;
+        const fd = new FormData(form);
+        const data = Object.fromEntries(fd);
+
+        const xhr = new XMLHttpRequest();
+        xhr.open('POST', '/auth/login', true);
+        xhr.setRequestHeader('Content-Type', 'application/json;charset=UTF-8');
+        xhr.setRequestHeader('X-Requested-With', 'XMLHttpRequest');
+
+        xhr.onload = function () {
             spinner.classList.add('hidden');
-        }
+            if (xhr.status >= 200 && xhr.status < 300) {
+                try {
+                    const res = JSON.parse(xhr.responseText);
+                    if (res.success) {
+                        window.location.href = res.redirectUrl || '/user/dashboard';
+                    } else {
+                        // handle OTP redirect
+                        if (res.redirectUrl === '/auth/verify-otp') {
+                            showAlert(res.message, 'info');
+                            setTimeout(function () {
+                                window.location.href = res.redirectUrl;
+                            }, 1500);
+                        } else {
+                            showAlert(res.message || 'Login failed', 'error');
+                            btnText.textContent = 'Login';
+                        }
+                    }
+                } catch (err) {
+                    showAlert('Invalid server response', 'error');
+                    btnText.textContent = 'Login';
+                }
+            } else {
+                try {
+                    const res = JSON.parse(xhr.responseText);
+                    showAlert(res.message || 'Login failed', 'error');
+                } catch (err) {
+                    showAlert('Network/server error', 'error');
+                }
+                btnText.textContent = 'Login';
+            }
+        };
+
+        xhr.onerror = function () {
+            spinner.classList.add('hidden');
+            btnText.textContent = 'Login';
+            showAlert('Network error. Please try again.', 'error');
+        };
+
+        xhr.send(JSON.stringify(data));
     });
     
     function togglePassword(id) {

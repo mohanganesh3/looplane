@@ -96,38 +96,46 @@
 </div>
 
 <script>
-    document.getElementById('registerForm').addEventListener('submit', async (e) => {
+    document.getElementById('registerForm').addEventListener('submit', function (e) {
         e.preventDefault();
-        
-        const btn = document.getElementById('registerBtnText');
+
+        const btnText = document.getElementById('registerBtnText');
         const spinner = document.getElementById('registerSpinner');
-        btn.textContent = 'Creating Account...';
+        btnText.textContent = 'Creating Account...';
         spinner.classList.remove('hidden');
-        
-        const formData = new FormData(e.target);
-        const data = Object.fromEntries(formData);
-        
-        try {
-            const response = await fetch('/auth/register', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(data)
-            });
-            
-            const result = await response.json();
-            
-            if (result.success) {
-                window.location.href = result.redirectUrl || '/auth/verify-otp';
-            } else {
-                showAlert(result.message || 'Registration failed', 'error');
-                btn.textContent = 'Create Account';
-                spinner.classList.add('hidden');
-            }
-        } catch (error) {
-            showAlert('Network error. Please try again.', 'error');
-            btn.textContent = 'Create Account';
+
+        const form = e.target;
+        const fd = new FormData(form);
+        const data = Object.fromEntries(fd);
+
+        const xhr = new XMLHttpRequest();
+        xhr.open('POST', '/auth/register', true);
+        xhr.setRequestHeader('Content-Type', 'application/json;charset=UTF-8');
+        xhr.setRequestHeader('X-Requested-With', 'XMLHttpRequest');
+
+        xhr.onload = function () {
             spinner.classList.add('hidden');
-        }
+            try {
+                const res = JSON.parse(xhr.responseText);
+                if (xhr.status >= 200 && xhr.status < 300 && res.success) {
+                    window.location.href = res.redirectUrl || '/auth/verify-otp';
+                } else {
+                    showAlert(res.message || 'Registration failed', 'error');
+                    btnText.textContent = 'Create Account';
+                }
+            } catch (err) {
+                showAlert('Invalid server response', 'error');
+                btnText.textContent = 'Create Account';
+            }
+        };
+
+        xhr.onerror = function () {
+            spinner.classList.add('hidden');
+            btnText.textContent = 'Create Account';
+            showAlert('Network error. Please try again.', 'error');
+        };
+
+        xhr.send(JSON.stringify(data));
     });
 </script>
 

@@ -741,61 +741,71 @@
             document.getElementById('imageModal').classList.remove('active');
         }
 
-        async function approveVerification() {
+        function approveVerification() {
             const notes = document.getElementById('approveNotes').value;
-            
-            try {
-                const response = await fetch('/admin/verifications/<%= userToVerify._id %>/approve', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({ notes })
-                });
 
-                const data = await response.json();
+            const xhr = new XMLHttpRequest();
+            xhr.open('POST', '/admin/verifications/<%= userToVerify._id %>/approve', true);
+            xhr.setRequestHeader('Content-Type', 'application/json;charset=UTF-8');
+            xhr.setRequestHeader('X-Requested-With', 'XMLHttpRequest');
 
-                if (response.ok) {
-                    alert('Verification approved successfully!');
-                    window.location.href = '/admin/verifications';
-                } else {
-                    alert(data.message || 'Failed to approve verification');
+            xhr.onload = function () {
+                try {
+                    const res = JSON.parse(xhr.responseText);
+                    if (xhr.status >= 200 && xhr.status < 300 && res.success) {
+                        alert('Verification approved successfully!');
+                        window.location.href = '/admin/verifications';
+                    } else {
+                        alert(res.message || 'Failed to approve verification');
+                    }
+                } catch (err) {
+                    console.error('Error parsing response', err);
+                    alert('An error occurred while approving verification');
                 }
-            } catch (error) {
-                console.error('Error:', error);
+            };
+
+            xhr.onerror = function () {
+                console.error('XHR error');
                 alert('An error occurred while approving verification');
-            }
+            };
+
+            xhr.send(JSON.stringify({ notes }));
         }
 
-        async function rejectVerification() {
+        function rejectVerification() {
             const reason = document.getElementById('rejectReason').value.trim();
-            
+
             if (!reason) {
                 alert('Please provide a reason for rejection');
                 return;
             }
 
-            try {
-                const response = await fetch('/admin/verifications/<%= userToVerify._id %>/reject', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({ reason })
-                });
+            const xhr = new XMLHttpRequest();
+            xhr.open('POST', '/admin/verifications/<%= userToVerify._id %>/reject', true);
+            xhr.setRequestHeader('Content-Type', 'application/json;charset=UTF-8');
+            xhr.setRequestHeader('X-Requested-With', 'XMLHttpRequest');
 
-                const data = await response.json();
-
-                if (response.ok) {
-                    alert('Verification rejected successfully!');
-                    window.location.href = '/admin/verifications';
-                } else {
-                    alert(data.message || 'Failed to reject verification');
+            xhr.onload = function () {
+                try {
+                    const res = JSON.parse(xhr.responseText);
+                    if (xhr.status >= 200 && xhr.status < 300 && res.success) {
+                        alert('Verification rejected successfully!');
+                        window.location.href = '/admin/verifications';
+                    } else {
+                        alert(res.message || 'Failed to reject verification');
+                    }
+                } catch (err) {
+                    console.error('Error parsing response', err);
+                    alert('An error occurred while rejecting verification');
                 }
-            } catch (error) {
-                console.error('Error:', error);
+            };
+
+            xhr.onerror = function () {
+                console.error('XHR error');
                 alert('An error occurred while rejecting verification');
-            }
+            };
+
+            xhr.send(JSON.stringify({ reason }));
         }
 
         // Close modals on background click

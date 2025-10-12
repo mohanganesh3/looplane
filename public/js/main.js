@@ -257,29 +257,43 @@ socket.on('notification', (data) => {
 });
 
 // Update Chat Unread Count Badge
-async function updateChatUnreadCount() {
-    try {
-        const response = await fetch('/chat/api/unread-count');
-        const data = await response.json();
-        
-        console.log('🔵 [Badge] Unread count:', data.unreadCount);
-        
-        const badge = document.getElementById('unreadCount');
-        if (badge) {
-            if (data.unreadCount > 0) {
-                badge.textContent = data.unreadCount > 9 ? '9+' : data.unreadCount;
-                badge.style.display = 'flex';
-                console.log('✅ [Badge] Showing badge with count:', badge.textContent);
-            } else {
-                badge.style.display = 'none';
-                console.log('✅ [Badge] Hiding badge (no unread)');
+function updateChatUnreadCount() {
+    const xhr = new XMLHttpRequest();
+    xhr.open('GET', '/chat/api/unread-count', true);
+    xhr.setRequestHeader('X-Requested-With', 'XMLHttpRequest');
+
+    xhr.onload = function () {
+        if (xhr.status >= 200 && xhr.status < 300) {
+            try {
+                const data = JSON.parse(xhr.responseText);
+                console.log('🔵 [Badge] Unread count:', data.unreadCount);
+
+                const badge = document.getElementById('unreadCount');
+                if (badge) {
+                    if (data.unreadCount > 0) {
+                        badge.textContent = data.unreadCount > 9 ? '9+' : data.unreadCount;
+                        badge.style.display = 'flex';
+                        console.log('✅ [Badge] Showing badge with count:', badge.textContent);
+                    } else {
+                        badge.style.display = 'none';
+                        console.log('✅ [Badge] Hiding badge (no unread)');
+                    }
+                } else {
+                    console.log('⚠️ [Badge] Badge element not found!');
+                }
+            } catch (err) {
+                console.error('❌ [Badge] Invalid JSON for unread count', err);
             }
         } else {
-            console.log('⚠️ [Badge] Badge element not found!');
+            console.error('❌ [Badge] Failed to fetch unread count, status:', xhr.status);
         }
-    } catch (error) {
-        console.error('❌ [Badge] Failed to fetch unread count:', error);
-    }
+    };
+
+    xhr.onerror = function () {
+        console.error('❌ [Badge] XHR error while fetching unread count');
+    };
+
+    xhr.send();
 }
 
 // Update chat badge on page load - use DOMContentLoaded

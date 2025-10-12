@@ -56,60 +56,79 @@
         }
     }, 1000);
     
-    document.getElementById('otpForm').addEventListener('submit', async (e) => {
+    document.getElementById('otpForm').addEventListener('submit', function (e) {
         e.preventDefault();
-        
-        const btn = document.getElementById('verifyBtnText');
+
+        const btnText = document.getElementById('verifyBtnText');
         const spinner = document.getElementById('verifySpinner');
-        btn.textContent = 'Verifying...';
+        btnText.textContent = 'Verifying...';
         spinner.classList.remove('hidden');
-        
-        const formData = new FormData(e.target);
-        const data = Object.fromEntries(formData);
-        
-        try {
-            const response = await fetch('/auth/verify-otp', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(data)
-            });
-            
-            const result = await response.json();
-            
-            if (result.success) {
-                showAlert('Verification successful!', 'success');
-                setTimeout(() => {
-                    window.location.href = result.redirectUrl;
-                }, 1000);
-            } else {
-                showAlert(result.message || 'Invalid OTP', 'error');
-                btn.textContent = 'Verify OTP';
-                spinner.classList.add('hidden');
-            }
-        } catch (error) {
-            showAlert('Network error. Please try again.', 'error');
-            btn.textContent = 'Verify OTP';
+
+        const fd = new FormData(e.target);
+        const data = Object.fromEntries(fd);
+
+        const xhr = new XMLHttpRequest();
+        xhr.open('POST', '/auth/verify-otp', true);
+        xhr.setRequestHeader('Content-Type', 'application/json;charset=UTF-8');
+        xhr.setRequestHeader('X-Requested-With', 'XMLHttpRequest');
+
+        xhr.onload = function () {
             spinner.classList.add('hidden');
-        }
-    });
-    
-    async function resendOTP() {
-        try {
-            const response = await fetch('/auth/resend-otp', {
-                method: 'POST'
-            });
-            
-            const result = await response.json();
-            
-            if (result.success) {
-                showAlert('New OTP sent!', 'success');
-                countdown = 60;
-            } else {
-                showAlert(result.message, 'error');
+            try {
+                const res = JSON.parse(xhr.responseText);
+                if (xhr.status >= 200 && xhr.status < 300 && res.success) {
+                    showAlert('Verification successful!', 'success');
+                    setTimeout(function () {
+                        window.location.href = res.redirectUrl || '/user/dashboard';
+                    }, 1000);
+                } else {
+                    showAlert(res.message || 'Invalid OTP', 'error');
+                    btnText.textContent = 'Verify OTP';
+                }
+            } catch (err) {
+                showAlert('Invalid server response', 'error');
+                btnText.textContent = 'Verify OTP';
             }
-        } catch (error) {
+        };
+
+        xhr.onerror = function () {
+            spinner.classList.add('hidden');
+            btnText.textContent = 'Verify OTP';
+            showAlert('Network error. Please try again.', 'error');
+        };
+
+        xhr.send(JSON.stringify(data));
+    });
+
+    function resendOTP() {
+        const resendBtn = document.getElementById('resendBtn');
+        resendBtn.disabled = true;
+
+        const xhr = new XMLHttpRequest();
+        xhr.open('POST', '/auth/resend-otp', true);
+        xhr.setRequestHeader('Content-Type', 'application/json;charset=UTF-8');
+        xhr.setRequestHeader('X-Requested-With', 'XMLHttpRequest');
+
+        xhr.onload = function () {
+            try {
+                const res = JSON.parse(xhr.responseText);
+                if (xhr.status >= 200 && xhr.status < 300 && res.success) {
+                    showAlert('New OTP sent!', 'success');
+                    countdown = 60;
+                } else {
+                    showAlert(res.message || 'Failed to resend OTP', 'error');
+                    // If server rejected due to rate limit, keep button disabled until timer allows
+                }
+            } catch (err) {
+                showAlert('Invalid server response', 'error');
+            }
+        };
+
+        xhr.onerror = function () {
             showAlert('Failed to resend OTP', 'error');
-        }
+        };
+
+        xhr.send();
     }
 </script>
 
