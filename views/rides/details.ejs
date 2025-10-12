@@ -2199,16 +2199,14 @@
             }
         }
 
-    // ============================================
-    // 🗺️ AUTOMATIC LOCATION TRACKING FOR DRIVERS
-    // ============================================
-    <% if (ride.rider._id.toString() === user._id.toString() && ['IN_PROGRESS','ACTIVE'].includes(ride.status)) { %>
+        // ============================================
+        // 🗺️ AUTOMATIC LOCATION TRACKING FOR DRIVERS
+        // ============================================
+        <% if (ride.rider._id.toString() === user._id.toString() && ['IN_PROGRESS','ACTIVE','PICKUP_PENDING','READY_FOR_PICKUP'].includes(ride.status)) { %>
         let locationWatchId = null;
         let lastLocationUpdate = null;
         const LOCATION_UPDATE_INTERVAL = 10000; // Update every 10 seconds
-        const MIN_DISTANCE_THRESHOLD = 10; // meters
-
-        // Calculate distance between two coordinates (Haversine formula)
+        const MIN_DISTANCE_THRESHOLD = 10; // meters        // Calculate distance between two coordinates (Haversine formula)
         function calculateDistance(lat1, lon1, lat2, lon2) {
             const R = 6371e3; // Earth's radius in meters
             const φ1 = lat1 * Math.PI / 180;

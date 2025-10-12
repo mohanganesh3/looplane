@@ -7,6 +7,31 @@ let sosActive = false;
 let watchId = null;
 let emergencyId = null;
 
+// Get Current Location Helper
+function getCurrentLocation() {
+    return new Promise((resolve, reject) => {
+        if (!navigator.geolocation) {
+            reject(new Error('Geolocation not supported'));
+            return;
+        }
+        
+        navigator.geolocation.getCurrentPosition(
+            (position) => {
+                resolve({
+                    latitude: position.coords.latitude,
+                    longitude: position.coords.longitude,
+                    accuracy: position.coords.accuracy
+                });
+            },
+            (error) => {
+                console.error('Geolocation error:', error);
+                reject(error);
+            },
+            { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+        );
+    });
+}
+
 // Trigger SOS Alert
 async function triggerSOSAlert(rideId = null, bookingId = null) {
     if (sosActive) {
@@ -23,7 +48,6 @@ async function triggerSOSAlert(rideId = null, bookingId = null) {
         // Get current location
         const location = await getCurrentLocation();
         
-        // Send SOS alert
         const response = await fetch('/sos/trigger', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -32,7 +56,9 @@ async function triggerSOSAlert(rideId = null, bookingId = null) {
                 bookingId,
                 latitude: location.latitude,
                 longitude: location.longitude,
-                notes: 'Emergency assistance required'
+                accuracy: location.accuracy,
+                notes: 'Emergency assistance required',
+                type: 'SOS'
             })
         });
         
@@ -240,6 +266,25 @@ function updateSOSButton(active) {
 }
 
 // Listen for SOS events from socket (only if socket available)
+if (typeof socket !== 'undefined' && socket) {
+    socket.on('sos-alert', (data) => {
+        console.log('SOS alert received:', data);
+        // Show alert notification
+        if (typeof showAlert === 'function') {
+            showAlert(`🚨 Emergency Alert from ${data.userName}`, 'error');
+        }
+    });
+}
+
+// Helper function for showing alerts (fallback if LANEApp not available)
+function showAlert(message, type = 'info') {
+    if (typeof LANEApp !== 'undefined' && LANEApp.showAlert) {
+        LANEApp.showAlert(message, type);
+    } else {
+        alert(message);
+    }
+}
+
 if (typeof socket !== 'undefined' && socket) {
     socket.on('sos-alert', (data) => {
         // Admin or other users receive this
