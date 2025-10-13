@@ -8,7 +8,7 @@ const apiController = require('../controllers/apiController');
 const userController = require('../controllers/userController');
 const authController = require('../controllers/authController');
 const { isAuthenticated } = require('../middleware/auth');
-const { searchLimiter } = require('../middleware/rateLimiter');
+// Rate limiter removed
 const uploadMiddleware = require('../middleware/upload');
 
 // All API routes require authentication
@@ -29,8 +29,8 @@ router.post('/users/change-password', authController.changePassword);
 router.delete('/users/account', userController.deleteAccount);
 
 // Geocoding
-router.get('/geocode', searchLimiter, apiController.geocodeAddress);
-router.get('/reverse-geocode', searchLimiter, apiController.reverseGeocode);
+router.get('/geocode', apiController.geocodeAddress);
+router.get('/reverse-geocode', apiController.reverseGeocode);
 
 // Routing
 router.post('/route', apiController.getRoute);
@@ -38,7 +38,7 @@ router.post('/distance-matrix', apiController.getDistanceMatrix);
 router.post('/snap-to-road', apiController.snapToRoad);
 
 // Location Autocomplete
-router.get('/autocomplete', searchLimiter, apiController.autocomplete);
+router.get('/autocomplete', apiController.autocomplete);
 
 // ETA Calculation
 router.get('/eta', apiController.calculateETA);

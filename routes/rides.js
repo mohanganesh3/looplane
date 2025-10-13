@@ -6,7 +6,7 @@ const express = require('express');
 const router = express.Router();
 const rideController = require('../controllers/rideController');
 const { isAuthenticated, isRider, isVerifiedRider } = require('../middleware/auth');
-const { searchLimiter } = require('../middleware/rateLimiter');
+// Rate limiter removed
 const {
     validateRidePost,
     validateRideUpdate,
@@ -18,7 +18,6 @@ const {
 router.get('/search', isAuthenticated, rideController.showSearchPage);
 router.get('/search/results',
     isAuthenticated,
-    searchLimiter,
     validateRideSearch,
     handleValidationErrors,
     rideController.searchRides

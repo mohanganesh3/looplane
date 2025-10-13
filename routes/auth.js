@@ -5,7 +5,7 @@
 const express = require('express');
 const router = express.Router();
 const authController = require('../controllers/authController');
-const { loginLimiter, registerLimiter, otpLimiter } = require('../middleware/rateLimiter');
+// Rate limiter removed
 const {
     validateRegistration,
     validateLogin,
@@ -20,7 +20,6 @@ const { isAuthenticated } = require('../middleware/auth');
 // Registration
 router.get('/register', authController.showRegisterPage);
 router.post('/register',
-    registerLimiter,
     validateRegistration,
     handleValidationErrors,
     authController.register
@@ -29,20 +28,17 @@ router.post('/register',
 // OTP Verification
 router.get('/verify-otp', authController.showVerifyOTPPage);
 router.post('/verify-otp',
-    otpLimiter,
     validateOTP,
     handleValidationErrors,
     authController.verifyOTP
 );
 router.post('/resend-otp',
-    otpLimiter,
     authController.resendOTP
 );
 
 // Login
 router.get('/login', authController.showLoginPage);
 router.post('/login',
-    loginLimiter,
     validateLogin,
     handleValidationErrors,
     authController.login
@@ -55,7 +51,6 @@ router.post('/logout', isAuthenticated, authController.logout);
 // Forgot Password
 router.get('/forgot-password', authController.showForgotPasswordPage);
 router.post('/forgot-password',
-    otpLimiter,
     validateForgotPassword,
     handleValidationErrors,
     authController.forgotPassword

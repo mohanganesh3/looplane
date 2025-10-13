@@ -6,7 +6,7 @@ const express = require('express');
 const router = express.Router();
 const chatController = require('../controllers/chatController');
 const { isAuthenticated } = require('../middleware/auth');
-const { chatLimiter } = require('../middleware/rateLimiter');
+// Rate limiter removed
 
 // ============================================
 // WEB ROUTES (Pages)
@@ -40,7 +40,6 @@ router.get('/api/:chatId/messages', isAuthenticated, chatController.getChatMessa
 // Send Message
 router.post('/api/:chatId/messages',
     isAuthenticated,
-    chatLimiter,
     chatController.sendMessage
 );
 

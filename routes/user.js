@@ -7,7 +7,7 @@ const router = express.Router();
 const userController = require('../controllers/userController');
 const { isAuthenticated, isRider } = require('../middleware/auth');
 const uploadMiddleware = require('../middleware/upload');
-const { uploadLimiter } = require('../middleware/rateLimiter');
+// Rate limiter removed
 const {
     validateProfileUpdate,
     validateEmergencyContact,
@@ -52,7 +52,6 @@ router.get('/upload-documents',
 router.post('/documents',
     isAuthenticated,
     isRider,
-    uploadLimiter,
     uploadMiddleware.riderDocuments,
     userController.uploadDocuments
 );
