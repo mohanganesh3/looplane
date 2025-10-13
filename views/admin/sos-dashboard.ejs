@@ -173,44 +173,93 @@
 <script src="/socket.io/socket.io.js"></script>
 
 <script>
+console.log('🔍 [SOS Dashboard] Script started loading...');
 let map, emergencies = [], markers = {};
 const socket = io();
+console.log('🔍 [SOS Dashboard] Socket.IO initialized');
 
 // Initialize map
 function initMap() {
-    map = L.map('map').setView([28.7041, 77.1025], 12); // Default to Delhi
+    console.log('🔍 [SOS Dashboard] initMap() called');
+    try {
+        map = L.map('map').setView([28.7041, 77.1025], 12); // Default to Delhi
     
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        attribution: '© OpenStreetMap contributors',
-        maxZoom: 19
-    }).addTo(map);
-    
-    console.log('✅ Map initialized');
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '© OpenStreetMap contributors',
+            maxZoom: 19
+        }).addTo(map);
+        
+        console.log('✅ [SOS Dashboard] Map initialized successfully');
+    } catch (error) {
+        console.error('❌ [SOS Dashboard] Map initialization error:', error);
+    }
 }
 
 // Load emergencies
 async function loadEmergencies() {
     try {
-        const response = await fetch('/admin/sos/emergencies');
+        console.log('🔄 [Admin Dashboard] Loading emergencies...');
+        const statusFilter = document.getElementById('statusFilter')?.value || 'ACTIVE';
+        const response = await fetch(`/sos/admin/all?status=${statusFilter}`);
         const data = await response.json();
         
         if (data.success) {
             emergencies = data.emergencies;
-            updateStats(data.stats);
+            console.log(`✅ [Admin Dashboard] Loaded ${emergencies.length} emergencies`);
+            await loadStats();
             renderEmergencies();
             updateMap();
+        } else {
+            console.error('❌ [Admin Dashboard] Failed to load emergencies:', data.message);
         }
     } catch (error) {
-        console.error('Failed to load emergencies:', error);
+        console.error('❌ [Admin Dashboard] Error loading emergencies:', error);
+    }
+}
+
+// Load statistics
+async function loadStats() {
+    try {
+        console.log('📊 [Admin Dashboard] Loading statistics...');
+        const response = await fetch('/sos/admin/stats');
+        const data = await response.json();
+        
+        if (data.success) {
+            console.log('✅ [Admin Dashboard] Stats loaded:', data.stats);
+            updateStats(data.stats);
+        } else {
+            console.error('❌ [Admin Dashboard] Failed to load stats:', data.message);
+        }
+    } catch (error) {
+        console.error('❌ [Admin Dashboard] Error loading stats:', error);
     }
 }
 
 // Update statistics
 function updateStats(stats) {
     document.getElementById('activeCount').textContent = stats.active || 0;
+    // Fix: Correct element id for High Priority card
     document.getElementById('highPriorityCount').textContent = stats.highPriority || 0;
-    document.getElementById('resolvedCount').textContent = stats.resolvedToday || 0;
-    document.getElementById('avgResponseTime').textContent = stats.avgResponseTime || '--';
+    
+    // Calculate resolved today
+    const resolvedToday = emergencies.filter(e => {
+        if (e.status !== 'RESOLVED') return false;
+        const today = new Date().setHours(0, 0, 0, 0);
+        const resolvedDate = new Date(e.resolvedAt).setHours(0, 0, 0, 0);
+        return resolvedDate === today;
+    }).length;
+    
+    document.getElementById('resolvedCount').textContent = resolvedToday;
+    
+    // Format average response time
+    const avgTime = stats.avgResponseTime || 0;
+    if (avgTime > 0) {
+        const minutes = Math.floor(avgTime / 60);
+        const seconds = Math.floor(avgTime % 60);
+        document.getElementById('avgResponseTime').textContent = `${minutes}m ${seconds}s`;
+    } else {
+        document.getElementById('avgResponseTime').textContent = '--';
+    }
 }
 
 // Render emergency list
@@ -279,12 +328,12 @@ function renderEmergencies() {
                 </p>
                 <p class="text-sm text-gray-700">
                     <i class="fas fa-map-marker-alt text-blue-600 mr-2"></i>
-                    <strong>Location:</strong> ${emergency.location.address || 'Fetching address...'}
+                    <strong>Location:</strong> ${emergency.location?.address || 'Fetching address...'}
                 </p>
-                ${emergency.notes ? `
+                ${emergency.description ? `
                 <p class="text-sm text-gray-700">
                     <i class="fas fa-sticky-note text-yellow-600 mr-2"></i>
-                    <strong>Notes:</strong> ${emergency.notes}
+                    <strong>Notes:</strong> ${emergency.description}
                 </p>
                 ` : ''}
                 <div class="flex items-center justify-between pt-3 border-t">
@@ -318,8 +367,8 @@ function updateMap() {
     const bounds = [];
     
     emergencies.forEach(emergency => {
-        if (emergency.location && emergency.location.coordinates) {
-            const [lng, lat] = emergency.location.coordinates;
+        if (emergency.location && emergency.location.coordinates && emergency.location.coordinates.coordinates) {
+            const [lng, lat] = emergency.location.coordinates.coordinates;
             
             const icon = L.divIcon({
                 className: 'custom-marker',
@@ -336,9 +385,9 @@ function updateMap() {
                 .addTo(map)
                 .bindPopup(`
                     <div class="p-2">
-                        <h4 class="font-bold">${emergency.user.profile.firstName} ${emergency.user.profile.lastName}</h4>
+                        <h4 class="font-bold">${emergency.user?.profile?.firstName || 'User'} ${emergency.user?.profile?.lastName || ''}</h4>
                         <p class="text-sm text-gray-600">${emergency.type}</p>
-                        <p class="text-sm text-gray-600">${emergency.emergencyId}</p>
+                        <p class="text-sm text-gray-600">${emergency._id.substring(0, 8)}</p>
                         <button onclick="showEmergencyDetail('${emergency._id}')" class="mt-2 px-3 py-1 bg-blue-600 text-white rounded text-sm">
                             View Details
                         </button>
@@ -356,15 +405,176 @@ function updateMap() {
     }
 }
 
-// Show emergency detail
+// Show emergency detail (simplified - can expand later)
 async function showEmergencyDetail(emergencyId) {
-    try {
-        const response = await fetch(`/admin/sos/emergencies/${emergencyId}`);
-        const data = await response.json();
-        
-        if (data.success) {
-            const emergency = data.emergency;
-            const modal = document.getElementById('emergencyModal');
+    const emergency = emergencies.find(e => e._id === emergencyId);
+    if (!emergency) return;
+    
+    const modal = document.getElementById('emergencyModal');
+    const content = document.getElementById('modalContent');
+    
+    const lat = emergency.location?.coordinates?.coordinates?.[1] || 0;
+    const lng = emergency.location?.coordinates?.coordinates?.[0] || 0;
+    const userName = emergency.user?.profile?.firstName || 'User';
+    const userLastName = emergency.user?.profile?.lastName || '';
+    const userPhoto = emergency.user?.profile?.photo || '/images/default-avatar.png';
+    const userEmail = emergency.user?.email || 'N/A';
+    const userPhone = emergency.user?.phone || 'N/A';
+    
+    content.innerHTML = `
+        <div class="p-8">
+            <div class="flex items-center justify-between mb-6">
+                <h2 class="text-2xl font-bold text-gray-800">
+                    <i class="fas fa-exclamation-triangle text-red-600 mr-2"></i>
+                    Emergency Details
+                </h2>
+                <button onclick="closeModal()" class="text-gray-400 hover:text-gray-600">
+                    <i class="fas fa-times text-2xl"></i>
+                </button>
+            </div>
+            
+            <!-- User Info -->
+            <div class="bg-gray-50 rounded-lg p-6 mb-6">
+                <div class="flex items-center space-x-4 mb-4">
+                    <div class="w-16 h-16 rounded-full bg-gray-200 overflow-hidden">
+                        <img src="${userPhoto}" alt="${userName}" class="w-full h-full object-cover">
+                    </div>
+                    <div>
+                        <h3 class="text-xl font-bold text-gray-800">${userName} ${userLastName}</h3>
+                        <p class="text-gray-600">${userEmail}</p>
+                        <p class="text-gray-600">${userPhone}</p>
+                    </div>
+                </div>
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <p class="text-sm text-gray-600">Emergency ID</p>
+                        <p class="font-bold text-gray-800">${emergency._id.substring(0, 8)}</p>
+                    </div>
+                    <div>
+                        <p class="text-sm text-gray-600">Type</p>
+                        <p class="font-bold text-gray-800">${emergency.type}</p>
+                    </div>
+                    <div>
+                        <p class="text-sm text-gray-600">Priority</p>
+                        <span class="px-3 py-1 rounded-full text-xs font-bold ${getPriorityColor(emergency.priority)}">
+                            ${emergency.priority}
+                        </span>
+                    </div>
+                    <div>
+                        <p class="text-sm text-gray-600">Status</p>
+                        <span class="px-3 py-1 rounded-full text-xs font-bold ${getStatusColor(emergency.status)}">
+                            ${emergency.status}
+                        </span>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Location Info -->
+            <div class="bg-blue-50 rounded-lg p-6 mb-6">
+                <h3 class="font-bold text-gray-800 mb-4">
+                    <i class="fas fa-map-marker-alt text-blue-600 mr-2"></i>
+                    Location Information
+                </h3>
+                <p class="text-gray-700 mb-2">${emergency.location?.address || 'Address not available'}</p>
+                <p class="text-sm text-gray-600">Coordinates: ${lat.toFixed(6)}, ${lng.toFixed(6)}</p>
+                <a href="https://www.google.com/maps?q=${lat},${lng}" target="_blank"
+                    class="mt-3 inline-block px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition">
+                    <i class="fas fa-map mr-2"></i>Open in Google Maps
+                </a>
+            </div>
+            
+            ${emergency.description ? `
+            <div class="bg-yellow-50 rounded-lg p-6 mb-6">
+                <h3 class="font-bold text-gray-800 mb-2">
+                    <i class="fas fa-sticky-note text-yellow-600 mr-2"></i>
+                    Description
+                </h3>
+                <p class="text-gray-700">${emergency.description}</p>
+            </div>
+            ` : ''}
+            
+            <!-- Guardian Contacts -->
+            ${emergency.guardiansNotified && emergency.guardiansNotified.length > 0 ? `
+            <div class="bg-green-50 rounded-lg p-6 mb-6">
+                <h3 class="font-bold text-gray-800 mb-4">
+                    <i class="fas fa-users text-green-600 mr-2"></i>
+                    Guardians Notified (${emergency.guardiansNotified.length})
+                </h3>
+                <div class="space-y-2">
+                    ${emergency.guardiansNotified.map(g => `
+                        <div class="flex items-center justify-between bg-white p-3 rounded">
+                            <div>
+                                <p class="font-semibold">${g.name}</p>
+                                <p class="text-sm text-gray-600">${g.email}</p>
+                            </div>
+                            <span class="text-xs ${g.emailSent ? 'text-green-600' : 'text-red-600'}">
+                                ${g.emailSent ? '✅ Sent' : '❌ Failed'}
+                            </span>
+                        </div>
+                    `).join('')}
+                </div>
+            </div>
+            ` : ''}
+            
+            <!-- Timeline -->
+            <div class="bg-gray-50 rounded-lg p-6 mb-6">
+                <h3 class="font-bold text-gray-800 mb-4">
+                    <i class="fas fa-clock text-gray-600 mr-2"></i>
+                    Timeline
+                </h3>
+                <div class="space-y-3">
+                    <div class="flex items-start space-x-3">
+                        <i class="fas fa-circle text-red-600 mt-1 text-xs"></i>
+                        <div>
+                            <p class="font-semibold text-gray-800">Emergency Triggered</p>
+                            <p class="text-sm text-gray-600">${new Date(emergency.triggeredAt).toLocaleString()}</p>
+                        </div>
+                    </div>
+                    ${emergency.respondedAt ? `
+                    <div class="flex items-start space-x-3">
+                        <i class="fas fa-circle text-blue-600 mt-1 text-xs"></i>
+                        <div>
+                            <p class="font-semibold text-gray-800">Admin Responded</p>
+                            <p class="text-sm text-gray-600">${new Date(emergency.respondedAt).toLocaleString()}</p>
+                        </div>
+                    </div>
+                    ` : ''}
+                    ${emergency.resolvedAt ? `
+                    <div class="flex items-start space-x-3">
+                        <i class="fas fa-circle text-green-600 mt-1 text-xs"></i>
+                        <div>
+                            <p class="font-semibold text-gray-800">Emergency Resolved</p>
+                            <p class="text-sm text-gray-600">${new Date(emergency.resolvedAt).toLocaleString()}</p>
+                        </div>
+                    </div>
+                    ` : ''}
+                </div>
+            </div>
+            
+            <!-- Actions -->
+            <div class="flex justify-end space-x-3">
+                <button onclick="closeModal()" 
+                    class="px-6 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded-lg transition">
+                    Close
+                </button>
+                ${emergency.status === 'ACTIVE' ? `
+                <button onclick="respondToEmergency('${emergency._id}')" 
+                    class="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition">
+                    <i class="fas fa-hand-paper mr-2"></i>Respond
+                </button>
+                ` : ''}
+                ${emergency.status === 'IN_PROGRESS' ? `
+                <button onclick="resolveEmergency('${emergency._id}')" 
+                    class="px-6 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg transition">
+                    <i class="fas fa-check mr-2"></i>Mark Resolved
+                </button>
+                ` : ''}
+            </div>
+        </div>
+    `;
+    
+    modal.classList.remove('hidden');
+}
             const content = document.getElementById('modalContent');
             
             content.innerHTML = `
@@ -611,62 +821,145 @@ function refreshEmergencies() {
     loadEmergencies();
 }
 
+// Respond to emergency
+async function respondToEmergency(emergencyId, event) {
+    if (event) event.stopPropagation();
+    
+    if (!confirm('Mark this emergency as "In Progress"? This will notify the user that help is on the way.')) {
+        return;
+    }
+    
+    try {
+        const response = await fetch(`/sos/admin/${emergencyId}/update`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                status: 'IN_PROGRESS',
+                adminNotes: 'Admin team is responding to this emergency'
+            })
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            alert('Emergency status updated to IN PROGRESS');
+            loadEmergencies();
+        } else {
+            alert('Failed to update emergency: ' + (data.message || 'Unknown error'));
+        }
+    } catch (error) {
+        console.error('Error responding to emergency:', error);
+        alert('Failed to respond to emergency');
+    }
+}
+
+// Resolve emergency
+async function resolveEmergency(emergencyId) {
+    const notes = prompt('Please add resolution notes:');
+    if (!notes) return;
+    
+    try {
+        const response = await fetch(`/sos/admin/${emergencyId}/update`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                status: 'RESOLVED',
+                adminNotes: notes
+            })
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            alert('Emergency resolved successfully');
+            loadEmergencies();
+            closeModal();
+        } else {
+            alert('Failed to resolve emergency: ' + (data.message || 'Unknown error'));
+        }
+    } catch (error) {
+        console.error('Error resolving emergency:', error);
+        alert('Failed to resolve emergency');
+    }
+}
+
 // Socket.IO events
 socket.on('connect', () => {
-    console.log('✅ Admin socket connected');
+    console.log('✅ [Admin Dashboard] Socket connected:', socket.id);
     socket.emit('join-admin');
     document.getElementById('connectionStatus').innerHTML = '<i class="fas fa-circle text-green-500 animate-pulse mr-2"></i>Connected';
     document.getElementById('connectionStatus').className = 'px-4 py-2 rounded-lg bg-green-100 text-green-800 font-semibold';
 });
 
+socket.on('admin-joined', (data) => {
+    console.log('✅ [Admin Dashboard] Successfully joined admin room:', data);
+});
+
 socket.on('disconnect', () => {
-    console.log('⚠️ Admin socket disconnected');
+    console.log('⚠️ [Admin Dashboard] Socket disconnected');
     document.getElementById('connectionStatus').innerHTML = '<i class="fas fa-circle text-red-500 mr-2"></i>Disconnected';
     document.getElementById('connectionStatus').className = 'px-4 py-2 rounded-lg bg-red-100 text-red-800 font-semibold';
 });
 
-socket.on('new-sos-alert', (data) => {
-    console.log('🚨 New SOS alert received:', data);
+socket.on('emergency:new', (data) => {
+    console.log('🚨 [Admin Dashboard] New SOS alert received:', data);
     
-    // Play alert sound
-    const audio = new Audio('/sounds/alert.mp3');
-    audio.play().catch(e => console.log('Could not play sound'));
+    // Play alert sound (optional)
+    try {
+        const audio = new Audio('/sounds/alert.mp3');
+        audio.play().catch(e => console.log('Could not play sound:', e.message));
+    } catch(e) {}
     
     // Show browser notification
     if (Notification.permission === 'granted') {
+        const userName = data.emergency?.user?.profile?.firstName || 'User';
         new Notification('🚨 NEW EMERGENCY ALERT', {
-            body: `${data.userName} needs help! Priority: ${data.priority}`,
+            body: `${userName} needs help!`,
             icon: '/images/logo.png',
             requireInteraction: true
         });
     }
     
-    // Reload emergencies
+    // Reload emergencies to show the new one
+    console.log('🔄 [Admin Dashboard] Reloading emergencies...');
     loadEmergencies();
 });
 
-socket.on('sos-location-update', (data) => {
-    console.log('📍 SOS location update:', data);
-    
-    // Update marker if exists
-    if (markers[data.emergencyId]) {
-        const { latitude, longitude } = data.location;
-        markers[data.emergencyId].setLatLng([latitude, longitude]);
-    }
+socket.on('emergency:updated', (data) => {
+    console.log('📍 [Admin Dashboard] Emergency updated:', data);
+    loadEmergencies();
+});
+
+socket.on('emergency:cancelled', (data) => {
+    console.log('✅ [Admin Dashboard] Emergency cancelled:', data);
+    loadEmergencies();
 });
 
 // Initialize
 document.addEventListener('DOMContentLoaded', () => {
+    console.log('🚀 [Admin Dashboard] Initializing SOS Dashboard...');
     initMap();
     loadEmergencies();
     
     // Request notification permission
     if (Notification.permission === 'default') {
-        Notification.requestPermission();
+        console.log('📢 [Admin Dashboard] Requesting notification permission...');
+        Notification.requestPermission().then(permission => {
+            console.log('📢 [Admin Dashboard] Notification permission:', permission);
+        });
     }
     
     // Auto-refresh every 30 seconds
-    setInterval(loadEmergencies, 30000);
+    setInterval(() => {
+        console.log('🔄 [Admin Dashboard] Auto-refreshing emergencies...');
+        loadEmergencies();
+    }, 30000);
+    
+    console.log('✅ [Admin Dashboard] Initialization complete');
 });
 </script>
 

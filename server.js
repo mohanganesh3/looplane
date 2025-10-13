@@ -177,17 +177,11 @@ io.on('connection', (socket) => {
         console.log(`✅ [Socket.IO] User joined personal room: user-${userId}`);
     });
     
-    // Join admin room for emergency alerts
+    // Join admin room
     socket.on('join-admin', () => {
         socket.join('admin-room');
         console.log(`🛡️ [Socket.IO] Admin joined admin room: ${socket.id}`);
         socket.emit('admin-joined', { success: true });
-    });
-    
-    // Join emergency tracking room
-    socket.on('join-emergency', (emergencyId) => {
-        socket.join(`emergency-${emergencyId}`);
-        console.log(`🚨 [Socket.IO] User joined emergency room: emergency-${emergencyId}`);
     });
     
     // Generic join handler (for backward compatibility)
@@ -262,14 +256,63 @@ io.on('connection', (socket) => {
         socket.to(`chat-${chatId}`).emit('messages-read', { chatId });
     });
     
-    // Location update during live tracking
+    // Location update during live tracking (DRIVER/RIDER sending location)
     socket.on('location-update', (data) => {
-        const { rideId, location, userId } = data;
-        io.to(`ride-${rideId}`).emit('driver-location', {
-            location,
-            timestamp: new Date(),
-            userId
+        const { rideId, bookingId, location, userId } = data;
+        
+        console.log(`📍 [Location Update] Ride: ${rideId}, User: ${userId}`, {
+            lat: location?.latitude,
+            lng: location?.longitude,
+            speed: location?.speed
         });
+        
+        // Broadcast to all tracking this ride
+        if (rideId) {
+            io.to(`ride-${rideId}`).emit('location-update', {
+                location,
+                timestamp: new Date(),
+                userId
+            });
+            
+            // Also emit driver-location for backward compatibility
+            io.to(`ride-${rideId}`).emit('driver-location', {
+                location,
+                timestamp: new Date(),
+                userId
+            });
+        }
+        
+        // Also broadcast to specific booking rooms
+        if (bookingId) {
+            io.to(`tracking-${bookingId}`).emit('location-update', {
+                location,
+                timestamp: new Date(),
+                userId
+            });
+        }
+    });
+    
+    // Rider/Driver broadcasts location (alternative naming)
+    socket.on('rider-location', (data) => {
+        const { rideId, bookingId, location, userId } = data;
+        console.log(`🚗 [Rider Location] Broadcasting for ride: ${rideId}`);
+        
+        // Broadcast to all passengers tracking this ride
+        if (rideId) {
+            io.to(`ride-${rideId}`).emit('location-update', {
+                location,
+                timestamp: new Date(),
+                userId
+            });
+        }
+        
+        if (bookingId) {
+            io.to(`tracking-${bookingId}`).emit('location-update', {
+                location,
+                timestamp: new Date(),
+                userId
+            });
+        }
     });
     
     // Chat message (legacy - now handled via API)
@@ -288,11 +331,6 @@ io.on('connection', (socket) => {
         socket.to(`booking-${bookingId}`).emit('user-typing', { userId });
     });
     
-    // SOS alert
-    socket.on('sos-alert', (data) => {
-        io.emit('emergency-alert', data); // Broadcast to all admins
-    });
-    
     socket.on('disconnect', () => {
         console.log('👤 Client disconnected:', socket.id);
     });
@@ -307,12 +345,12 @@ const userRoutes = require('./routes/user');
 const rideRoutes = require('./routes/rides');
 const bookingRoutes = require('./routes/bookings');
 const chatRoutes = require('./routes/chat');
-const sosRoutes = require('./routes/sos');
 const trackingRoutes = require('./routes/tracking');
 const adminRoutes = require('./routes/admin');
 const apiRoutes = require('./routes/api');
 const reviewRoutes = require('./routes/reviews');
 const reportRoutes = require('./routes/reports');
+const sosRoutes = require('./routes/sos');
 
 // Import middleware
 const { attachUser } = require('./middleware/auth');
@@ -335,12 +373,12 @@ app.use('/user', userRoutes);
 app.use('/rides', rideRoutes);
 app.use('/bookings', bookingRoutes);
 app.use('/chat', chatRoutes);
-app.use('/sos', sosRoutes);
 app.use('/tracking', trackingRoutes);
 app.use('/admin', adminRoutes);
 app.use('/api', apiRoutes);
 app.use('/reviews', reviewRoutes);
 app.use('/reports', reportRoutes);
+app.use('/sos', sosRoutes);
 
 // 404 handler
 app.use(notFound);

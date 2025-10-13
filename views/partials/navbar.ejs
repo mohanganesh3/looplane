@@ -33,6 +33,11 @@
                         </a>
                     <% } %>
 
+                    <!-- Track Ride Link -->
+                    <a href="/sos/emergency" class="text-gray-700 hover:text-primary transition">
+                        <i class="fas fa-map-marked-alt mr-1"></i> Track Ride
+                    </a>
+
                                 <a href="/chat" class="text-gray-700 hover:text-primary transition relative">
                                     <i class="fas fa-comments mr-1"></i> Messages
                                     <span
@@ -121,11 +126,11 @@
                                 </div>
 
                                 <!-- SOS Button -->
-                                <button onclick="triggerSOSAlert()"
+                                <a href="/sos/emergency"
                                     class="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg transition flex items-center space-x-2">
                                     <i class="fas fa-exclamation-triangle"></i>
                                     <span>SOS</span>
-                                </button>
+                                </a>
                                 <% } else { %>
                                     <!-- Guest Menu -->
                                     <a href="/" class="text-gray-700 hover:text-primary transition">Home</a>
@@ -167,7 +172,18 @@
                         <i class="fas fa-ticket-alt mr-2"></i> My Bookings
                     </a>
                 <% } %>
-                <a href="/user/dashboard" class="block text-gray-700 hover:text-primary transition">
+                
+                <!-- Track Ride (Mobile) -->
+                <a href="/sos/emergency" class="block text-gray-700 hover:text-primary transition">
+                    <i class="fas fa-map-marked-alt mr-2"></i> Track Ride
+                </a>
+                
+                <!-- SOS (Mobile) -->
+                <a href="/sos/emergency" class="block bg-red-600 text-white hover:bg-red-700 transition px-4 py-2 rounded-lg text-center mt-2">
+                    <i class="fas fa-exclamation-triangle mr-2"></i> SOS Emergency
+                </a>
+                
+                <a href="/user/dashboard" class="block text-gray-700 hover:text-primary transition mt-2">
                     <i class="fas fa-tachometer-alt mr-2"></i> Dashboard
                 </a>
                 <a href="/auth/logout" class="block text-red-600 hover:text-red-700 transition">

@@ -568,6 +568,96 @@ class EmailService {
             return false;
         }
     }
+
+    /**
+     * Send Emergency SOS Alert to Guardian Emails
+     */
+    static async sendEmergencyAlert(emails, emergencyDetails) {
+        const { userName, userEmail, userPhone, location, locationUrl, time, emergencyId, type } = emergencyDetails;
+        
+        const mailOptions = {
+            from: `"${process.env.APP_NAME} Emergency" <${process.env.EMAIL_FROM}>`,
+            to: emails.join(', '),
+            subject: `🚨 EMERGENCY ALERT: ${userName} needs help!`,
+            html: `
+                <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; border: 3px solid #DC2626;">
+                    <div style="background-color: #DC2626; color: white; padding: 20px; text-align: center;">
+                        <h1 style="margin: 0; font-size: 28px;">🚨 EMERGENCY ALERT 🚨</h1>
+                    </div>
+                    
+                    <div style="padding: 30px; background-color: #FEF2F2;">
+                        <p style="font-size: 18px; font-weight: bold; color: #991B1B; margin-bottom: 20px;">
+                            ${userName} has triggered an emergency SOS alert!
+                        </p>
+                        
+                        <div style="background-color: white; padding: 20px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #DC2626;">
+                            <h3 style="margin-top: 0; color: #DC2626;">Emergency Details:</h3>
+                            <p style="margin: 10px 0;"><strong>Type:</strong> ${type || 'SOS'}</p>
+                            <p style="margin: 10px 0;"><strong>Time:</strong> ${time}</p>
+                            <p style="margin: 10px 0;"><strong>Emergency ID:</strong> ${emergencyId}</p>
+                        </div>
+
+                        <div style="background-color: white; padding: 20px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #DC2626;">
+                            <h3 style="margin-top: 0; color: #DC2626;">Contact Information:</h3>
+                            <p style="margin: 10px 0;"><strong>Name:</strong> ${userName}</p>
+                            <p style="margin: 10px 0;"><strong>Email:</strong> ${userEmail}</p>
+                            <p style="margin: 10px 0;"><strong>Phone:</strong> ${userPhone}</p>
+                        </div>
+
+                        <div style="background-color: white; padding: 20px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #DC2626;">
+                            <h3 style="margin-top: 0; color: #DC2626;">📍 Location:</h3>
+                            <p style="margin: 10px 0;">${location}</p>
+                            <div style="text-align: center; margin: 20px 0;">
+                                <a href="${locationUrl}" 
+                                   style="background-color: #DC2626; color: white; padding: 15px 30px; 
+                                          text-decoration: none; border-radius: 5px; display: inline-block; 
+                                          font-weight: bold; font-size: 16px;">
+                                    📍 View Location on Map
+                                </a>
+                            </div>
+                        </div>
+
+                        <div style="background-color: #FEF2F2; padding: 20px; border-radius: 8px; border: 2px solid #FCA5A5; margin: 20px 0;">
+                            <h3 style="margin-top: 0; color: #991B1B;">⚠️ Immediate Actions:</h3>
+                            <ul style="margin: 10px 0; padding-left: 20px; color: #7F1D1D;">
+                                <li style="margin: 8px 0;">Try calling ${userName} immediately at: <strong>${userPhone}</strong></li>
+                                <li style="margin: 8px 0;">Click the location link above to see their exact position</li>
+                                <li style="margin: 8px 0;">If you cannot reach them, contact local emergency services (112)</li>
+                                <li style="margin: 8px 0;">The admin team at LANE has also been notified</li>
+                            </ul>
+                        </div>
+
+                        <div style="text-align: center; margin: 30px 0;">
+                            <p style="color: #DC2626; font-weight: bold; font-size: 16px;">
+                                This is an automated emergency alert from LANE Carpool
+                            </p>
+                            <p style="color: #991B1B; font-size: 14px;">
+                                Please respond immediately
+                            </p>
+                        </div>
+                    </div>
+
+                    <div style="background-color: #7F1D1D; color: white; padding: 15px; text-align: center;">
+                        <p style="margin: 5px 0; font-size: 12px;">
+                            LANE Carpool Safety System | Emergency Response Team
+                        </p>
+                        <p style="margin: 5px 0; font-size: 12px;">
+                            For support, contact: ${process.env.EMAIL_FROM}
+                        </p>
+                    </div>
+                </div>
+            `
+        };
+
+        try {
+            await transporter.sendMail(mailOptions);
+            console.log(`✅ Emergency alert email sent to ${emails.length} guardian(s)`);
+            return true;
+        } catch (error) {
+            console.error('❌ Error sending emergency alert email:', error);
+            throw error;
+        }
+    }
 }
 
 module.exports = EmailService;

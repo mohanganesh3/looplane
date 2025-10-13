@@ -1,45 +1,38 @@
 /**
  * SOS Emergency Routes
+ * Routes for emergency alerts and admin management
  */
 
 const express = require('express');
 const router = express.Router();
 const sosController = require('../controllers/sosController');
 const { isAuthenticated, isAdmin } = require('../middleware/auth');
-const { sosLimiter } = require('../middleware/rateLimiter');
 
-// Show SOS Page
-router.get('/trigger', isAuthenticated, sosController.showSOSPage);
+// Public Emergency Page (requires authentication)
+router.get('/emergency', isAuthenticated, sosController.showEmergencyPage);
 
-// Trigger SOS Alert
-router.post('/trigger',
-    isAuthenticated,
-    sosLimiter,
-    sosController.triggerSOS
-);
+// Trigger Emergency Alert
+router.post('/trigger', isAuthenticated, sosController.triggerEmergency);
 
-// Update SOS Location
-router.post('/:emergencyId/location',
-    isAuthenticated,
-    sosController.updateSOSLocation
-);
+// Get User's Active Emergency Status
+router.get('/status', isAuthenticated, sosController.getEmergencyStatus);
 
-// Resolve Emergency
-router.post('/:emergencyId/resolve',
-    isAuthenticated,
-    sosController.resolveEmergency
-);
+// Cancel Emergency (False Alarm)
+router.post('/:emergencyId/cancel', isAuthenticated, sosController.cancelEmergency);
 
-// Get Emergency Details
-router.get('/:emergencyId',
-    isAuthenticated,
-    sosController.getEmergencyDetails
-);
-
-// Get Emergency History
-router.get('/my/history',
-    isAuthenticated,
-    sosController.getEmergencyHistory
-);
+// Admin Routes
+router.get('/admin/test', isAuthenticated, isAdmin, (req, res) => {
+    res.render('admin/sos-test', { title: 'SOS Test', user: req.user });
+});
+router.get('/admin/dashboard', isAuthenticated, isAdmin, (req, res) => {
+    res.render('admin/sos-dashboard', {
+        title: 'SOS Emergency Dashboard - LANE Admin',
+        user: req.user
+    });
+});
+router.get('/admin/all', isAuthenticated, isAdmin, sosController.getAllEmergencies);
+router.get('/admin/active', isAuthenticated, isAdmin, sosController.getActiveEmergencies);
+router.get('/admin/stats', isAuthenticated, isAdmin, sosController.getEmergencyStats);
+router.post('/admin/:emergencyId/update', isAuthenticated, isAdmin, sosController.updateEmergencyStatus);
 
 module.exports = router;

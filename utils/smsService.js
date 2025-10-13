@@ -70,7 +70,22 @@ class SMSService {
      * Send emergency SOS SMS alert
      */
     static async sendSOSAlert(phone, emergencyDetails) {
-        const message = `🚨 EMERGENCY ALERT: ${emergencyDetails.name} has triggered SOS during a ride. Track live location: ${emergencyDetails.trackingLink}. Emergency ID: ${emergencyDetails.emergencyId}. Driver: ${emergencyDetails.driverName}, ${emergencyDetails.driverPhone}. Please check immediately!`;
+        // Build location info
+        let locationInfo = emergencyDetails.location || 'Location not available';
+        
+        // If we have nearby services info, include it
+        let nearbyInfo = '';
+        if (emergencyDetails.nearestHospital) {
+            nearbyInfo = ` Nearest hospital: ${emergencyDetails.nearestHospital} (${emergencyDetails.hospitalDistance}).`;
+        }
+        if (emergencyDetails.nearestPolice) {
+            nearbyInfo += ` Police: ${emergencyDetails.nearestPolice} (${emergencyDetails.policeDistance}).`;
+        }
+        
+        const message = `🚨 EMERGENCY: ${emergencyDetails.userName} triggered ${emergencyDetails.emergencyType || 'SOS'} at ${emergencyDetails.time}. ` +
+                       `Location: ${locationInfo}${nearbyInfo} ` +
+                       `Track: ${emergencyDetails.trackingLink} ` +
+                       `ID: ${emergencyDetails.emergencyId}`;
 
         try {
             const result = await client.messages.create({

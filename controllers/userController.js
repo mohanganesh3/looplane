@@ -417,6 +417,22 @@ exports.getProfileAPI = asyncHandler(async (req, res) => {
 });
 
 /**
+ * Get profile data (for SOS page and other components)
+ */
+exports.getProfileData = asyncHandler(async (req, res) => {
+    const user = await User.findById(req.user._id)
+        .select('profile email phone emergencyContacts');
+
+    res.status(200).json({
+        success: true,
+        profile: user.profile,
+        email: user.email,
+        phone: user.phone,
+        emergencyContacts: user.emergencyContacts || []
+    });
+});
+
+/**
  * Update profile with comprehensive validation and normalization
  */
 exports.updateProfile = asyncHandler(async (req, res) => {

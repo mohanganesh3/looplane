@@ -203,10 +203,10 @@
                                 <div class="ride-header">
                                     <div class="route">
                                         <i class="fas fa-circle" style="color: #10b981; font-size: 10px;"></i>
-                                        <%= ride.origin?.address || 'Unknown Origin' %>
+                                        <%= ride.route?.start?.name || ride.route?.start?.address || 'Unknown Origin' %>
                                         <i class="fas fa-arrow-right" style="color: #6b7280;"></i>
                                         <i class="fas fa-map-marker-alt" style="color: #ef4444;"></i>
-                                        <%= ride.destination?.address || 'Unknown Destination' %>
+                                        <%= ride.route?.destination?.name || ride.route?.destination?.address || 'Unknown Destination' %>
                                     </div>
                                     <span class="badge badge-<%= ride.status.toLowerCase() %>">
                                         <%= ride.status %>
@@ -220,23 +220,23 @@
                                     </div>
                                     <div class="info-item">
                                         <strong>Date & Time:</strong><br>
-                                        <%= new Date(ride.departureTime).toLocaleString() %>
+                                        <%= ride.schedule?.departureDateTime ? new Date(ride.schedule.departureDateTime).toLocaleString() : 'Invalid Date' %>
                                     </div>
                                     <div class="info-item">
                                         <strong>Available Seats:</strong><br>
-                                        <%= ride.availableSeats %>
+                                        <%= ride.pricing?.availableSeats || 0 %>
                                     </div>
                                     <div class="info-item">
                                         <strong>Price per Seat:</strong><br>
-                                        ₹<%= ride.pricePerSeat %>
+                                        ₹<%= ride.pricing?.pricePerSeat || 0 %>
                                     </div>
                                     <div class="info-item">
                                         <strong>Distance:</strong><br>
-                                        <%= ride.distance ? (ride.distance / 1000).toFixed(1) : 'N/A' %> km
+                                        <%= ride.route?.distance ? ride.route.distance.toFixed(1) : 'N/A' %> km
                                     </div>
                                     <div class="info-item">
                                         <strong>Duration:</strong><br>
-                                        <%= ride.duration ? Math.round(ride.duration / 60) : 'N/A' %> min
+                                        <%= ride.route?.duration ? Math.round(ride.route.duration) : 'N/A' %> min
                                     </div>
                                 </div>
 

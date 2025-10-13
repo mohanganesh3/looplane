@@ -128,7 +128,8 @@ exports.showTrackingPage = asyncHandler(async (req, res) => {
     const fromLoc = ride.route?.start?.name || 'Unknown';
     const toLoc = ride.route?.destination?.name || 'Unknown';
 
-    res.render('tracking/live-tracking', {
+    // Use static map version (more reliable than live tracking)
+    res.render('tracking/live-tracking-static', {
         title: `Track Ride - ${fromLoc} to ${toLoc}`,
         ...trackingData,
         user: req.user
@@ -297,5 +298,53 @@ function calculateETA(ride) {
 
     return estimatedArrival;
 }
+
+/**
+ * Show driver/rider broadcast page
+ * GET /tracking/broadcast/:rideId
+ */
+exports.showDriverBroadcastPage = asyncHandler(async (req, res) => {
+    const { rideId } = req.params;
+    const userId = req.user._id;
+
+    console.log('🚗 [Driver Broadcast] Loading broadcast page for ride:', rideId);
+    console.log('🚗 [Driver Broadcast] User:', userId);
+
+    // Find the ride
+    const ride = await Ride.findById(rideId)
+        .populate('rider', 'profile.firstName profile.lastName profile.photo phone rating')
+        .populate('vehicle', 'make model color licensePlate');
+
+    if (!ride) {
+        req.flash('error', 'Ride not found');
+        return res.redirect('/rides/my-rides');
+    }
+
+    // Check if user is the rider/driver
+    const isRider = ride.rider._id.toString() === userId.toString();
+
+    if (!isRider) {
+        req.flash('error', 'Only the driver can access this page');
+        return res.redirect('/rides/my-rides');
+    }
+
+    // Get confirmed bookings for this ride
+    const bookings = await Booking.find({
+        ride: rideId,
+        status: { $in: ['CONFIRMED', 'READY_FOR_PICKUP', 'IN_PROGRESS'] }
+    }).populate('passenger', 'profile.firstName profile.lastName profile.photo');
+
+    console.log('✅ [Driver Broadcast] Ride found with', bookings.length, 'active bookings');
+
+    res.render('tracking/driver-broadcast', {
+        title: 'Live Location Broadcasting',
+        ride: ride,
+        booking: null, // Driver doesn't have a booking
+        user: req.user,
+        activeBookings: bookings,
+        isLive: ride.tracking?.isLive || false,
+        currentLocation: ride.tracking?.currentLocation || null
+    });
+});
 
 module.exports = exports;

@@ -30,16 +30,6 @@ router.get('/verifications/:userId', adminController.showVerificationDetails);
 router.post('/verifications/:userId/approve', adminController.approveVerification);
 router.post('/verifications/:userId/reject', adminController.rejectVerification);
 
-// Emergency Management
-router.get('/emergencies', adminController.showEmergencies);
-
-// SOS Emergency Dashboard
-router.get('/sos', adminController.showSOSDashboard);
-router.get('/sos/emergencies', adminController.getAllEmergencies);
-router.get('/sos/emergencies/:emergencyId', adminController.getEmergencyDetails);
-router.post('/sos/emergencies/:emergencyId/respond', adminController.respondToEmergency);
-router.post('/sos/emergencies/:emergencyId/resolve', adminController.resolveEmergency);
-
 // Rides Management
 router.get('/rides', adminController.showRides);
 router.get('/rides/:rideId', adminController.showRideDetails);
@@ -56,6 +46,10 @@ router.post('/reports/:reportId/review', adminController.reviewReport);
 
 // Statistics
 router.get('/statistics', adminController.showStatistics);
+
+// SOS Emergency Management (redirect to /sos/admin routes)
+router.get('/sos', (req, res) => res.redirect('/sos/admin/dashboard'));
+router.get('/sos/emergencies', (req, res) => res.redirect('/sos/admin/all'));
 
 // Settings
 router.get('/settings', adminController.showSettings);

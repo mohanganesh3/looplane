@@ -12,7 +12,13 @@ const { isAuthenticated } = require('../middleware/auth');
 router.use(isAuthenticated);
 
 /**
- * Show live tracking page
+ * Show driver/rider live location broadcast page
+ * GET /tracking/broadcast/:rideId
+ */
+router.get('/broadcast/:rideId', trackingController.showDriverBroadcastPage);
+
+/**
+ * Show live tracking page (for passengers)
  * GET /tracking/:bookingId
  */
 router.get('/:bookingId', trackingController.showTrackingPage);

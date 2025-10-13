@@ -1,15 +1,15 @@
 /**
  * Admin Controller
- * Handles admin operations: user verification, emergency management, reports
+ * Handles admin operations: user verification, reports
  */
 
 const User = require('../models/User');
 const Ride = require('../models/Ride');
 const Booking = require('../models/Booking');
-const Emergency = require('../models/Emergency');
 const Report = require('../models/Report');
 const Review = require('../models/Review');
 const Notification = require('../models/Notification');
+const Settings = require('../models/Settings');
 const { AppError, asyncHandler } = require('../middleware/errorHandler');
 const helpers = require('../utils/helpers');
 const { sendEmail } = require('../config/email');
@@ -47,11 +47,33 @@ exports.showDashboard = asyncHandler(async (req, res) => {
         .sort({ createdAt: -1 })
         .limit(10);
 
-    // Get revenue statistics
+    // Get revenue statistics - Enhanced to count more booking statuses
     const totalRevenue = await Booking.aggregate([
-        { $match: { status: 'COMPLETED' } },
-        { $group: { _id: null, total: { $sum: '$fare' } } }
+        { 
+            $match: { 
+                // Include more statuses to capture completed/paid rides
+                status: { $in: ['COMPLETED', 'DROPPED_OFF'] },
+                // Make payment status optional since some bookings might not have it set properly
+                $or: [
+                    { 'payment.status': { $in: ['PAID', 'PAYMENT_CONFIRMED'] } },
+                    { totalPrice: { $gt: 0 } } // Fallback: any booking with a price
+                ]
+            } 
+        },
+        { 
+            $group: { 
+                _id: null, 
+                total: { $sum: '$totalPrice' }, // Use totalPrice for total revenue
+                count: { $sum: 1 }
+            } 
+        }
     ]);
+
+    console.log('📊 [Admin Dashboard] Revenue calculation:', totalRevenue);
+
+    // Calculate platform commission (₹50 per completed booking)
+    const completedBookingsCount = totalRevenue[0]?.count || 0;
+    const platformRevenue = completedBookingsCount * 50; // ₹50 commission per booking
 
     res.render('admin/dashboard', {
         title: 'Admin Dashboard',
@@ -72,7 +94,9 @@ exports.showDashboard = asyncHandler(async (req, res) => {
                 pending: pendingBookings,
                 confirmed: confirmedBookings
             },
-            revenue: totalRevenue[0]?.total || 0
+            revenue: totalRevenue[0]?.total || 0,
+            platformRevenue: platformRevenue,
+            revenueBookings: completedBookingsCount
         },
         recentUsers,
         recentRides,
@@ -682,36 +706,6 @@ exports.rejectVerification = asyncHandler(async (req, res) => {
 });
 
 /**
- * Show active emergencies
- */
-exports.showEmergencies = asyncHandler(async (req, res) => {
-    const { status = 'ACTIVE' } = req.query;
-    const page = parseInt(req.query.page) || 1;
-    const limit = 20;
-    const skip = (page - 1) * limit;
-
-    const query = status === 'all' ? {} : { status: status.toUpperCase() };
-
-    const totalEmergencies = await Emergency.countDocuments(query);
-    const emergencies = await Emergency.find(query)
-        .populate('user', 'name phone profilePhoto emergencyContacts')
-        .populate('ride', 'origin destination')
-        .sort({ createdAt: -1 })
-        .skip(skip)
-        .limit(limit);
-
-    const pagination = helpers.paginate(totalEmergencies, page, limit);
-
-    res.render('admin/emergencies', {
-        title: 'Emergency Alerts - Admin',
-        user: req.user,
-        emergencies,
-        currentStatus: status,
-        pagination
-    });
-});
-
-/**
  * Show reports
  */
 exports.showReports = asyncHandler(async (req, res) => {
@@ -1032,6 +1026,8 @@ exports.toggleUserStatus = asyncHandler(async (req, res) => {
 exports.showStatistics = asyncHandler(async (req, res) => {
     const { range = 'month' } = req.query;
 
+    console.log('📊 [Statistics] Loading statistics page with range:', range);
+
     // Calculate date range
     let startDate = new Date();
     if (range === 'week') {
@@ -1042,27 +1038,38 @@ exports.showStatistics = asyncHandler(async (req, res) => {
         startDate.setFullYear(startDate.getFullYear() - 1);
     }
 
-    // User Statistics
+    const firstDayOfMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
+
+    // ===== USER STATISTICS =====
     const totalUsers = await User.countDocuments();
     const newUsersThisMonth = await User.countDocuments({
-        createdAt: { $gte: new Date(new Date().getFullYear(), new Date().getMonth(), 1) }
+        createdAt: { $gte: firstDayOfMonth }
     });
+    console.log(`👥 Users - Total: ${totalUsers}, New this month: ${newUsersThisMonth}`);
 
-    // Ride Statistics
+    // ===== RIDE STATISTICS =====
     const totalRides = await Ride.countDocuments();
     const completedRides = await Ride.countDocuments({ status: 'COMPLETED' });
-    const activeRides = await Ride.countDocuments({ status: 'ACTIVE' });
+    const inProgressRides = await Ride.countDocuments({ status: 'IN_PROGRESS' });
     const cancelledRides = await Ride.countDocuments({ status: 'CANCELLED' });
     const completionRate = totalRides > 0 ? Math.round((completedRides / totalRides) * 100) : 0;
+    console.log(`🚗 Rides - Total: ${totalRides}, Completed: ${completedRides}, Completion Rate: ${completionRate}%`);
 
-    // Revenue Statistics
+    // ===== REVENUE STATISTICS (FIXED) =====
+    // Use totalPrice field with flexible status matching
     const revenueData = await Booking.aggregate([
-        { $match: { status: 'COMPLETED', 'payment.status': 'SUCCESS' } },
+        { 
+            $match: { 
+                status: { $in: ['COMPLETED', 'DROPPED_OFF'] },
+                totalPrice: { $gt: 0 }
+            } 
+        },
         {
             $group: {
                 _id: null,
-                totalRevenue: { $sum: '$pricing.total' },
-                platformFees: { $sum: '$pricing.platformFee' }
+                totalRevenue: { $sum: '$totalPrice' },
+                platformFees: { $sum: '$payment.platformCommission' },
+                count: { $sum: 1 }
             }
         }
     ]);
@@ -1070,28 +1077,38 @@ exports.showStatistics = asyncHandler(async (req, res) => {
     const revenueThisMonth = await Booking.aggregate([
         {
             $match: {
-                status: 'COMPLETED',
-                'payment.status': 'SUCCESS',
-                createdAt: { $gte: new Date(new Date().getFullYear(), new Date().getMonth(), 1) }
+                status: { $in: ['COMPLETED', 'DROPPED_OFF'] },
+                totalPrice: { $gt: 0 },
+                createdAt: { $gte: firstDayOfMonth }
             }
         },
         {
             $group: {
                 _id: null,
-                total: { $sum: '$pricing.total' }
+                total: { $sum: '$totalPrice' },
+                count: { $sum: 1 }
             }
         }
     ]);
 
-    // Environmental Impact
-    const totalDistance = await Ride.aggregate([
-        { $match: { status: 'COMPLETED' } },
-        { $group: { _id: null, total: { $sum: '$distance' } } }
-    ]);
-    const co2Saved = totalDistance[0] ? Math.round((totalDistance[0].total / 1000) * 0.12) : 0; // 120g CO2 per km
-    const treesEquivalent = Math.round(co2Saved / 21); // 1 tree absorbs 21kg CO2/year
+    const totalRevenue = revenueData[0]?.totalRevenue || 0;
+    const revenueThisMonthValue = revenueThisMonth[0]?.total || 0;
+    const platformFees = revenueData[0]?.platformFees || 0;
+    console.log(`💰 Revenue - Total: ₹${totalRevenue}, This Month: ₹${revenueThisMonthValue}, Platform Fees: ₹${platformFees}`);
 
-    // User Growth Chart Data
+    // ===== ENVIRONMENTAL IMPACT (FIXED) =====
+    // Use route.distance field (already in km)
+    const totalDistance = await Ride.aggregate([
+        { $match: { status: 'COMPLETED', 'route.distance': { $exists: true } } },
+        { $group: { _id: null, total: { $sum: '$route.distance' } } }
+    ]);
+    const totalDistanceKm = totalDistance[0]?.total || 0;
+    // CO2 saved: Assume 120g CO2 per km saved by carpooling
+    const co2Saved = Math.round(totalDistanceKm * 0.12); // in kg
+    const treesEquivalent = Math.round(co2Saved / 21); // 1 tree absorbs 21kg CO2/year
+    console.log(`🌍 Environmental - Distance: ${totalDistanceKm.toFixed(1)} km, CO2 Saved: ${co2Saved} kg, Trees: ${treesEquivalent}`);
+
+    // ===== USER GROWTH CHART DATA =====
     const userGrowthData = await User.aggregate([
         { $match: { createdAt: { $gte: startDate } } },
         {
@@ -1102,33 +1119,46 @@ exports.showStatistics = asyncHandler(async (req, res) => {
         },
         { $sort: { _id: 1 } }
     ]);
+    console.log(`📈 User Growth Data (${range}):`, userGrowthData);
 
-    // Revenue Chart Data
+    // ===== REVENUE CHART DATA (FIXED) =====
     const revenueChartData = await Booking.aggregate([
         {
             $match: {
-                status: 'COMPLETED',
-                'payment.status': 'SUCCESS',
+                status: { $in: ['COMPLETED', 'DROPPED_OFF'] },
+                totalPrice: { $gt: 0 },
                 createdAt: { $gte: startDate }
             }
         },
         {
             $group: {
                 _id: { $dateToString: { format: '%Y-%m', date: '$createdAt' } },
-                revenue: { $sum: '$pricing.total' }
+                revenue: { $sum: '$totalPrice' }
             }
         },
         { $sort: { _id: 1 } }
     ]);
+    console.log(`💵 Revenue Chart Data:`, revenueChartData);
 
-    // Popular Routes
+    // ===== RIDES OVERVIEW CHART =====
+    const ridesOverviewData = await Ride.aggregate([
+        {
+            $group: {
+                _id: '$status',
+                count: { $sum: 1 }
+            }
+        }
+    ]);
+    console.log(`🚙 Rides Overview Data:`, ridesOverviewData);
+
+    // ===== POPULAR ROUTES (FIXED) =====
     const popularRoutes = await Ride.aggregate([
-        { $match: { status: { $in: ['COMPLETED', 'ACTIVE'] } } },
+        { $match: { status: { $in: ['COMPLETED', 'IN_PROGRESS'] } } },
         {
             $group: {
                 _id: {
-                    origin: '$origin.address',
-                    destination: '$destination.address'
+                    origin: { $ifNull: ['$route.start.name', '$route.start.address'] },
+                    destination: { $ifNull: ['$route.destination.name', '$route.destination.address'] }
                 },
                 count: { $sum: 1 }
             }
@@ -1136,23 +1166,60 @@ exports.showStatistics = asyncHandler(async (req, res) => {
         { $sort: { count: -1 } },
         { $limit: 10 }
     ]);
+    console.log(`🗺️ Popular Routes:`, popularRoutes);
 
-    // Safety Metrics
+    // ===== SAFETY METRICS =====
+    // Check all users with ratings
     const averageRating = await User.aggregate([
-        { $match: { role: 'RIDER', 'rating.overall': { $gt: 0 } } },
+        { $match: { 'rating.overall': { $gt: 0 } } },
         { $group: { _id: null, avg: { $avg: '$rating.overall' } } }
     ]);
 
-    const verifiedDriversCount = await User.countDocuments({ role: 'RIDER', verificationStatus: 'VERIFIED' });
-    const totalDrivers = await User.countDocuments({ role: 'RIDER' });
-    const verifiedPercentage = totalDrivers > 0 ? Math.round((verifiedDriversCount / totalDrivers) * 100) : 0;
+    // Verified drivers/riders
+    const verifiedUsersCount = await User.countDocuments({ verificationStatus: 'VERIFIED' });
+    const totalUsersForVerification = await User.countDocuments();
+    const verifiedPercentage = totalUsersForVerification > 0 ? Math.round((verifiedUsersCount / totalUsersForVerification) * 100) : 0;
 
-    const sosAlerts = await Emergency.countDocuments();
+    const sosAlerts = 0; // SOS removed
     const reportsCount = await Report.countDocuments();
+    
+    const avgRatingValue = averageRating[0]?.avg ? averageRating[0].avg.toFixed(1) : '5';
+    console.log(`🛡️ Safety - Avg Rating: ${avgRatingValue}, Verified: ${verifiedPercentage}%, SOS: ${sosAlerts}, Reports: ${reportsCount}`);
+
+    // Helper to format chart data
+    const formatUserGrowth = (data) => {
+        const labels = data.map(d => d._id);
+        const counts = data.map(d => d.count);
+        console.log('📊 [Format] User Growth - Labels:', labels, 'Data:', counts);
+        return { labels, data: counts };
+    };
+
+    const formatRevenue = (data) => {
+        const labels = data.map(d => d._id);
+        const revenues = data.map(d => d.revenue);
+        console.log('📊 [Format] Revenue - Labels:', labels, 'Data:', revenues);
+        return { labels, data: revenues };
+    };
+
+    const formatRides = (data) => {
+        const labels = data.map(d => d._id);
+        const counts = data.map(d => d.count);
+        console.log('📊 [Format] Rides - Labels:', labels, 'Data:', counts);
+        return { labels, data: counts };
+    };
+
+    const formatRoutes = (data) => {
+        const labels = data.map(d => `${d._id.origin.split(',')[0]} -> ${d._id.destination.split(',')[0]}`);
+        const counts = data.map(d => d.count);
+        console.log('📊 [Format] Routes - Labels:', labels, 'Data:', counts);
+        return { labels, data: counts };
+    };
+
 
     res.render('admin/statistics', {
-        title: 'Analytics & Statistics',
+        title: 'Platform Statistics',
         user: req.user,
+        currentRange: range,
         stats: {
             users: {
                 total: totalUsers,
@@ -1161,37 +1228,31 @@ exports.showStatistics = asyncHandler(async (req, res) => {
             rides: {
                 total: totalRides,
                 completed: completedRides,
-                active: activeRides,
+                active: inProgressRides,
                 cancelled: cancelledRides,
                 completionRate
             },
             revenue: {
-                total: revenueData[0]?.totalRevenue || 0,
-                thisMonth: revenueThisMonth[0]?.total || 0
+                total: totalRevenue,
+                thisMonth: revenueThisMonthValue,
+                platformFees
             },
             environmental: {
                 co2Saved,
-                treesEquivalent
+                treesEquivalent,
+                totalDistance: totalDistanceKm
             },
             safety: {
-                averageRating: averageRating[0]?.avg ? averageRating[0].avg.toFixed(1) : '0.0',
+                averageRating: avgRatingValue,
                 verifiedDrivers: verifiedPercentage,
-                sosAlerts,
+                sosAlerts: sosAlerts,
                 reports: reportsCount
             },
             charts: {
-                userGrowth: {
-                    labels: userGrowthData.map(d => d._id),
-                    data: userGrowthData.map(d => d.count)
-                },
-                revenue: {
-                    labels: revenueChartData.map(d => d._id),
-                    data: revenueChartData.map(d => d.revenue)
-                },
-                popularRoutes: {
-                    labels: popularRoutes.map(r => `${r._id.origin} → ${r._id.destination}`),
-                    data: popularRoutes.map(r => r.count)
-                }
+                userGrowth: formatUserGrowth(userGrowthData),
+                revenue: formatRevenue(revenueChartData),
+                ridesOverview: formatRides(ridesOverviewData),
+                popularRoutes: formatRoutes(popularRoutes)
             }
         }
     });
@@ -1379,9 +1440,12 @@ exports.showBookingDetails = asyncHandler(async (req, res) => {
  * Show settings
  */
 exports.showSettings = asyncHandler(async (req, res) => {
+    const settings = await Settings.getSettings();
+    
     res.render('admin/settings', {
         title: 'System Settings',
-        user: req.user
+        user: req.user,
+        settings: settings || {}
     });
 });
 
@@ -1389,8 +1453,127 @@ exports.showSettings = asyncHandler(async (req, res) => {
  * Update settings
  */
 exports.updateSettings = asyncHandler(async (req, res) => {
-    // TODO: Implement settings update logic
-    res.json({ success: true, message: 'Settings updated successfully' });
+    try {
+        const {
+            // Pricing
+            commission,
+            baseFare,
+            pricePerKm,
+            pricePerMinute,
+            
+            // Safety
+            maxSpeed,
+            routeDeviation,
+            minRating,
+            autoSuspend,
+            
+            // Notifications
+            emailNotifications,
+            smsNotifications,
+            pushNotifications,
+            sosAlerts,
+            
+            // Features
+            rideSharingEnabled,
+            chatEnabled,
+            reviewsEnabled,
+            paymentOnline,
+            verificationRequired,
+            maintenanceMode,
+            
+            // Email Config
+            smtpHost,
+            smtpPort,
+            fromEmail,
+            fromName,
+            
+            // SMS Config
+            twilioSid,
+            twilioPhone,
+            
+            // Environmental
+            co2PerKm,
+            co2PerTree,
+            
+            // Booking
+            maxPassengers,
+            cancellationWindow,
+            cancellationFee,
+            autoAcceptRadius
+        } = req.body;
+
+        const updates = {
+            pricing: {
+                commission: parseFloat(commission) || 10,
+                baseFare: parseFloat(baseFare) || 20,
+                pricePerKm: parseFloat(pricePerKm) || 5,
+                pricePerMinute: parseFloat(pricePerMinute) || 1
+            },
+            safety: {
+                maxSpeed: parseInt(maxSpeed) || 100,
+                routeDeviation: parseInt(routeDeviation) || 500,
+                minRating: parseFloat(minRating) || 3.5,
+                autoSuspendReports: parseInt(autoSuspend) || 3
+            },
+            notifications: {
+                emailEnabled: emailNotifications === 'on' || emailNotifications === true,
+                smsEnabled: smsNotifications === 'on' || smsNotifications === true,
+                pushEnabled: pushNotifications === 'on' || pushNotifications === true,
+                sosAlertsEnabled: sosAlerts === 'on' || sosAlerts === true
+            },
+            features: {
+                rideSharingEnabled: rideSharingEnabled === 'on' || rideSharingEnabled === true,
+                chatEnabled: chatEnabled === 'on' || chatEnabled === true,
+                reviewsEnabled: reviewsEnabled === 'on' || reviewsEnabled === true,
+                onlinePaymentRequired: paymentOnline === 'on' || paymentOnline === true,
+                verificationRequired: verificationRequired === 'on' || verificationRequired === true,
+                maintenanceMode: maintenanceMode === 'on' || maintenanceMode === true
+            },
+            email: {
+                smtpHost: smtpHost || 'smtp.gmail.com',
+                smtpPort: parseInt(smtpPort) || 587,
+                fromEmail: fromEmail || 'noreply@lanecarpool.com',
+                fromName: fromName || 'LANE Carpool'
+            },
+            sms: {
+                twilioSid: twilioSid || '',
+                twilioPhone: twilioPhone || ''
+            }
+        };
+
+        // Add optional fields if provided
+        if (co2PerKm) {
+            updates.environmental = {
+                co2PerKm: parseFloat(co2PerKm) || 0.12,
+                co2PerTree: parseFloat(co2PerTree) || 22
+            };
+        }
+
+        if (maxPassengers) {
+            updates.booking = {
+                maxPassengersPerRide: parseInt(maxPassengers) || 4,
+                cancellationWindow: parseInt(cancellationWindow) || 60,
+                cancellationFee: parseFloat(cancellationFee) || 0,
+                autoAcceptRadius: parseFloat(autoAcceptRadius) || 5
+            };
+        }
+
+        const settings = await Settings.updateSettings(updates, req.user._id);
+        
+        console.log('✅ [Settings] Settings updated successfully by admin:', req.user.email);
+        
+        res.json({ 
+            success: true, 
+            message: 'Settings updated successfully',
+            settings: settings
+        });
+    } catch (error) {
+        console.error('❌ [Settings] Error updating settings:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: 'Failed to update settings: ' + error.message 
+        });
+    }
 });
 
 /**
@@ -1505,202 +1688,6 @@ exports.showFinancialDashboard = asyncHandler(async (req, res) => {
         startDate,
         endDate,
         getUserName: require('../models/User').getUserName
-    });
-});
-
-/**
- * Show SOS Emergency Dashboard
- */
-exports.showSOSDashboard = asyncHandler(async (req, res) => {
-    res.render('admin/sos-dashboard', {
-        title: 'SOS Emergency Dashboard',
-        user: req.user
-    });
-});
-
-/**
- * Get all emergencies (API endpoint)
- */
-exports.getAllEmergencies = asyncHandler(async (req, res) => {
-    const { status, priority, type, limit = 50 } = req.query;
-    
-    const query = {};
-    if (status) query.status = status;
-    if (priority) query.priority = priority;
-    if (type) query.type = type;
-    
-    const emergencies = await Emergency.find(query)
-        .populate('user', 'profile email phone')
-        .populate('ride', 'route.start.name route.destination.name')
-        .populate('booking', 'bookingReference')
-        .populate('responseTimeline.performedBy', 'profile')
-        .sort({ createdAt: -1 })
-        .limit(parseInt(limit));
-    
-    // Calculate statistics
-    const stats = {
-        active: await Emergency.countDocuments({ status: 'ACTIVE' }),
-        inProgress: await Emergency.countDocuments({ status: 'IN_PROGRESS' }),
-        resolved: await Emergency.countDocuments({ status: 'RESOLVED' }),
-        highPriority: await Emergency.countDocuments({ 
-            priority: { $in: ['CRITICAL', 'HIGH'] },
-            status: { $in: ['ACTIVE', 'IN_PROGRESS'] }
-        }),
-        resolvedToday: await Emergency.countDocuments({
-            status: 'RESOLVED',
-            'resolution.resolvedAt': { 
-                $gte: new Date(new Date().setHours(0, 0, 0, 0)) 
-            }
-        })
-    };
-    
-    // Calculate average response time
-    const resolvedEmergencies = await Emergency.find({
-        status: 'RESOLVED',
-        'resolution.resolvedAt': { $exists: true }
-    }).select('createdAt resolution.resolvedAt').limit(100);
-    
-    if (resolvedEmergencies.length > 0) {
-        const totalTime = resolvedEmergencies.reduce((sum, e) => {
-            const responseTime = (new Date(e.resolution.resolvedAt) - new Date(e.createdAt)) / 1000 / 60; // minutes
-            return sum + responseTime;
-        }, 0);
-        const avgMinutes = Math.round(totalTime / resolvedEmergencies.length);
-        stats.avgResponseTime = avgMinutes < 60 ? `${avgMinutes}m` : `${Math.round(avgMinutes / 60)}h`;
-    } else {
-        stats.avgResponseTime = '--';
-    }
-    
-    res.json({
-        success: true,
-        emergencies,
-        stats
-    });
-});
-
-/**
- * Get emergency details (API endpoint)
- */
-exports.getEmergencyDetails = asyncHandler(async (req, res) => {
-    const { emergencyId } = req.params;
-    
-    const emergency = await Emergency.findById(emergencyId)
-        .populate('user', 'profile email phone emergencyContacts')
-        .populate('ride', 'route.start.name route.destination.name rider')
-        .populate('booking', 'bookingReference passenger')
-        .populate('responseTimeline.performedBy', 'profile')
-        .populate('resolution.resolvedBy', 'profile');
-    
-    if (!emergency) {
-        throw new AppError('Emergency not found', 404);
-    }
-    
-    res.json({
-        success: true,
-        emergency
-    });
-});
-
-/**
- * Respond to emergency (API endpoint)
- */
-exports.respondToEmergency = asyncHandler(async (req, res) => {
-    const { emergencyId } = req.params;
-    const adminId = req.user._id;
-    
-    const emergency = await Emergency.findById(emergencyId);
-    
-    if (!emergency) {
-        throw new AppError('Emergency not found', 404);
-    }
-    
-    if (emergency.status !== 'ACTIVE') {
-        throw new AppError('Emergency is not active', 400);
-    }
-    
-    // Update status to IN_PROGRESS
-    emergency.status = 'IN_PROGRESS';
-    
-    // Add to response timeline
-    emergency.responseTimeline.push({
-        action: 'Admin Responded',
-        timestamp: new Date(),
-        performedBy: adminId,
-        details: `Admin ${req.user.profile.firstName} is now responding to this emergency`
-    });
-    
-    await emergency.save();
-    
-    // Emit socket event to user
-    const io = req.app.get('io');
-    if (io) {
-        io.to(`emergency-${emergencyId}`).emit('admin-responding', {
-            emergencyId,
-            admin: {
-                name: `${req.user.profile.firstName} ${req.user.profile.lastName}`,
-                id: adminId
-            },
-            message: 'An admin is now responding to your emergency'
-        });
-    }
-    
-    res.json({
-        success: true,
-        message: 'Successfully marked as responding',
-        emergency
-    });
-});
-
-/**
- * Resolve emergency (API endpoint)
- */
-exports.resolveEmergency = asyncHandler(async (req, res) => {
-    const { emergencyId } = req.params;
-    const { resolution } = req.body;
-    const adminId = req.user._id;
-    
-    const emergency = await Emergency.findById(emergencyId);
-    
-    if (!emergency) {
-        throw new AppError('Emergency not found', 404);
-    }
-    
-    if (emergency.status === 'RESOLVED') {
-        throw new AppError('Emergency already resolved', 400);
-    }
-    
-    // Update status and resolution
-    emergency.status = 'RESOLVED';
-    emergency.resolution = {
-        resolvedAt: new Date(),
-        resolvedBy: adminId,
-        resolution: resolution || 'Emergency resolved by admin',
-        method: 'ADMIN_ACTION'
-    };
-    
-    // Add to response timeline
-    emergency.responseTimeline.push({
-        action: 'Emergency Resolved',
-        timestamp: new Date(),
-        performedBy: adminId,
-        details: resolution || 'Emergency resolved by admin'
-    });
-    
-    await emergency.save();
-    
-    // Emit socket event to user
-    const io = req.app.get('io');
-    if (io) {
-        io.to(`emergency-${emergencyId}`).emit('emergency-resolved', {
-            emergencyId,
-            resolution: resolution || 'Emergency resolved by admin'
-        });
-    }
-    
-    res.json({
-        success: true,
-        message: 'Emergency marked as resolved',
-        emergency
     });
 });
 

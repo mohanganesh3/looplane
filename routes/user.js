@@ -15,10 +15,6 @@ const {
     handleValidationErrors
 } = require('../middleware/validation');
 
-// Emergency Contacts Routes
-const emergencyContactsRouter = require('./emergencyContacts');
-router.use('/emergency-contacts', emergencyContactsRouter);
-
 // Dashboard
 router.get('/dashboard', isAuthenticated, userController.showDashboard);
 
@@ -63,7 +59,8 @@ router.post('/documents',
 
 // Profile
 router.get('/profile', isAuthenticated, userController.showProfile);
-router.put('/profile',
+router.get('/profile-data', isAuthenticated, userController.getProfileData);
+router.post('/profile',
     isAuthenticated,
     uploadMiddleware.fields([
         { name: 'profilePhoto', maxCount: 1 }

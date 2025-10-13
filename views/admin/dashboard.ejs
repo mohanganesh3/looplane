@@ -327,14 +327,8 @@
             <a href="/admin/bookings" class="admin-nav-item">
                 <i class="fas fa-ticket-alt"></i> Bookings
             </a>
-            <a href="/admin/emergencies" class="admin-nav-item">
-                <i class="fas fa-exclamation-triangle"></i> Emergencies
-            </a>
             <a href="/admin/reports" class="admin-nav-item">
                 <i class="fas fa-flag"></i> Reports
-            </a>
-            <a href="/admin/statistics" class="admin-nav-item">
-                <i class="fas fa-chart-line"></i> Statistics
             </a>
             <a href="/admin/settings" class="admin-nav-item">
                 <i class="fas fa-cog"></i> Settings
@@ -511,9 +505,9 @@
                                             <strong><%= ride.rider.profile.firstName %> <%= ride.rider.profile.lastName %></strong>
                                         </td>
                                         <td>
-                                            <%= ride.route.startLocation %> <i class="fas fa-arrow-right"></i> <%= ride.route.destination %>
+                                            <%= ride.route.start.name %> <i class="fas fa-arrow-right"></i> <%= ride.route.destination.name %>
                                         </td>
-                                        <td><%= new Date(ride.departureTime).toLocaleDateString() %></td>
+                                        <td><%= ride.schedule?.departureDateTime ? new Date(ride.schedule.departureDateTime).toLocaleDateString() : new Date(ride.createdAt).toLocaleDateString() %></td>
                                         <td>
                                             <% if (ride.status === 'ACTIVE') { %>
                                                 <span class="badge badge-success">Active</span>
