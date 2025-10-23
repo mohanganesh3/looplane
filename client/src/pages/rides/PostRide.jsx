@@ -1,16 +1,19 @@
 import { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
-import { LoadingSpinner, Alert } from '../../components/common';
+import { LoadingSpinner, Alert, Button } from '../../components/common';
 import LocationInput from '../../components/common/LocationInput';
 import userService from '../../services/userService';
+import rideService from '../../services/rideService';
 
 const PostRide = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
   const [loading, setLoading] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
   const [vehicles, setVehicles] = useState([]);
   const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
 
   const [formData, setFormData] = useState({
     origin: null,
@@ -337,6 +340,80 @@ const PostRide = () => {
                   </div>
                 </div>
               </div>
+            </div>
+
+            {/* Preferences */}
+            <div className="border-b pb-6">
+              <h2 className="text-xl font-bold text-gray-800 mb-4">
+                <i className="fas fa-sliders-h text-emerald-500 mr-2"></i>Preferences
+              </h2>
+
+              <div className="space-y-4">
+                {/* Instant Booking */}
+                <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
+                  <div>
+                    <h4 className="font-semibold text-gray-800">
+                      <i className="fas fa-bolt text-blue-600 mr-1"></i>Auto-Approve Bookings
+                    </h4>
+                    <p className="text-sm text-gray-600">Passengers can book without waiting for approval</p>
+                  </div>
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={formData.instantBooking}
+                      onChange={(e) => setFormData(prev => ({ ...prev, instantBooking: e.target.checked }))}
+                      className="sr-only peer"
+                    />
+                    <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-emerald-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-500"></div>
+                  </label>
+                </div>
+
+                {/* Ladies Only */}
+                {user?.gender === 'FEMALE' && (
+                  <div className="flex items-center justify-between p-4 bg-pink-50 rounded-lg border border-pink-200">
+                    <div>
+                      <h4 className="font-semibold text-gray-800">
+                        <i className="fas fa-female text-pink-600 mr-1"></i>Ladies Only
+                      </h4>
+                      <p className="text-sm text-gray-600">Only female passengers can book this ride</p>
+                    </div>
+                    <label className="relative inline-flex items-center cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={formData.ladiesOnly}
+                        onChange={(e) => setFormData(prev => ({ ...prev, ladiesOnly: e.target.checked }))}
+                        className="sr-only peer"
+                      />
+                      <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-pink-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-pink-500"></div>
+                    </label>
+                  </div>
+                )}
+
+                {/* Notes */}
+                <div>
+                  <label className="block text-gray-700 font-medium mb-2">Additional Notes</label>
+                  <textarea
+                    value={formData.notes}
+                    onChange={(e) => setFormData(prev => ({ ...prev, notes: e.target.value }))}
+                    rows="3"
+                    placeholder="Any special instructions for passengers..."
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+                  ></textarea>
+                </div>
+              </div>
+            </div>
+
+            {/* Submit Buttons */}
+            <div className="flex justify-end space-x-4">
+              <Link
+                to="/user/dashboard"
+                className="px-6 py-3 border border-gray-300 rounded-lg hover:bg-gray-50 transition font-semibold"
+              >
+                Cancel
+              </Link>
+              <Button type="submit" loading={submitting}>
+                <i className="fas fa-paper-plane mr-2"></i>Post Ride
+              </Button>
             </div>
           </form>
         </div>
