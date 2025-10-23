@@ -2,6 +2,9 @@ import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { AuthProvider } from './context/AuthContext';
 import { Layout } from './components/layout';
 import { Login, Register, VerifyOtp, ForgotPassword, ResetPassword } from './pages/auth';
+import { SearchRides, PostRide } from './pages/rides';
+import { Dashboard } from './pages/user';
+import { MyBookings } from './pages/bookings';
 
 // Placeholder components for routes not yet implemented
 const Placeholder = ({ title }) => (
@@ -29,18 +32,18 @@ function App() {
           <Route path="/" element={<Layout><Placeholder title="Home Page" /></Layout>} />
 
           {/* Protected Routes - User */}
-          <Route path="/user/dashboard" element={<Layout><Placeholder title="Dashboard" /></Layout>} />
+          <Route path="/user/dashboard" element={<Layout><Dashboard /></Layout>} />
           <Route path="/user/profile" element={<Layout><Placeholder title="Profile" /></Layout>} />
           <Route path="/user/settings" element={<Layout><Placeholder title="Settings" /></Layout>} />
 
           {/* Rides */}
-          <Route path="/rides/search" element={<Layout><Placeholder title="Search Rides" /></Layout>} />
-          <Route path="/rides/post" element={<Layout><Placeholder title="Post a Ride" /></Layout>} />
+          <Route path="/rides/search" element={<Layout><SearchRides /></Layout>} />
+          <Route path="/rides/post" element={<Layout><PostRide /></Layout>} />
           <Route path="/rides/my-rides" element={<Layout><Placeholder title="My Rides" /></Layout>} />
           <Route path="/rides/:id" element={<Layout><Placeholder title="Ride Details" /></Layout>} />
 
           {/* Bookings */}
-          <Route path="/bookings" element={<Layout><Placeholder title="My Bookings" /></Layout>} />
+          <Route path="/bookings" element={<Layout><MyBookings /></Layout>} />
           <Route path="/bookings/:id" element={<Layout><Placeholder title="Booking Details" /></Layout>} />
 
           {/* Chat */}
