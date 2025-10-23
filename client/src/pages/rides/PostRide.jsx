@@ -36,6 +36,47 @@ const PostRide = () => {
     fetchVehicles();
   }, []);
 
+  useEffect(() => {
+    if (formData.totalRidePrice && formData.availableSeats) {
+      const perSeat = Math.round(formData.totalRidePrice / formData.availableSeats);
+      setPricePerSeat(perSeat);
+    } else {
+      setPricePerSeat(null);
+    }
+  }, [formData.totalRidePrice, formData.availableSeats]);
+
+  useEffect(() => {
+    if (formData.origin && formData.destination) {
+      calculateDistance(formData.origin, formData.destination);
+    }
+  }, [formData.origin, formData.destination]);
+
+  const calculateDistance = async (origin, destination) => {
+    try {
+      const [fromLon, fromLat] = origin.coordinates;
+      const [toLon, toLat] = destination.coordinates;
+
+      const response = await fetch(
+        `https://router.project-osrm.org/route/v1/driving/${fromLon},${fromLat};${toLon},${toLat}?overview=false`
+      );
+      const data = await response.json();
+
+      if (data.code === 'Ok' && data.routes?.[0]) {
+        const distanceKm = (data.routes[0].distance / 1000).toFixed(1);
+        setDistance(distanceKm);
+        
+        const predicted = Math.round(parseFloat(distanceKm) * 8);
+        setPredictedPrice(predicted);
+        
+        if (!formData.totalRidePrice) {
+          setFormData(prev => ({ ...prev, totalRidePrice: predicted }));
+        }
+      }
+    } catch (err) {
+      console.error('Distance calculation error:', err);
+    }
+  };
+
   const fetchVehicles = async () => {
     try {
       const data = await userService.getProfile();
@@ -236,6 +277,67 @@ const PostRide = () => {
             </div>
 
             <p className="text-gray-500 text-sm">Pricing section coming...</p>
+
+            {/* Pricing Section */}
+            <div className="border-b pb-6">
+              <h2 className="text-xl font-bold text-gray-800 mb-4">
+                <i className="fas fa-rupee-sign text-emerald-500 mr-2"></i>Pricing
+              </h2>
+
+              {/* Predicted Price */}
+              <div className="mb-4 p-4 bg-gradient-to-r from-blue-50 to-blue-100 border-2 border-blue-400 rounded-lg">
+                <p className="text-sm text-blue-800 font-semibold mb-2">
+                  <i className="fas fa-calculator mr-2"></i>Predicted Total Ride Price
+                </p>
+                <div className="text-3xl font-bold text-blue-700">
+                  {predictedPrice ? (
+                    <>₹{predictedPrice} <span className="text-sm font-normal">({distance} km × ₹8)</span></>
+                  ) : (
+                    'Select locations first'
+                  )}
+                </div>
+                <p className="text-xs text-blue-600 mt-2">
+                  💡 Based on distance × ₹8 per km (you can adjust below)
+                </p>
+              </div>
+
+              {/* Total Ride Price Input */}
+              <div className="mb-4">
+                <label className="block text-gray-700 font-bold mb-2 text-lg">
+                  <i className="fas fa-hand-holding-usd text-green-600 mr-2"></i>
+                  Your Total Ride Price *
+                </label>
+                <div className="relative">
+                  <span className="absolute left-4 top-4 text-gray-500 font-bold text-xl">₹</span>
+                  <input
+                    type="number"
+                    name="totalRidePrice"
+                    value={formData.totalRidePrice}
+                    onChange={(e) => setFormData(prev => ({ ...prev, totalRidePrice: e.target.value }))}
+                    min="1"
+                    placeholder="Enter total ride price"
+                    required
+                    className="w-full pl-12 pr-4 py-4 border-2 border-green-500 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-600 text-2xl font-bold text-green-700"
+                  />
+                </div>
+                <p className="text-sm text-gray-600 mt-2">
+                  💰 Enter the total price for the entire ride (will be divided among passengers)
+                </p>
+              </div>
+
+              {/* Price Per Seat Display */}
+              <div className="p-4 bg-green-50 border-l-4 border-green-500 rounded">
+                <div className="flex justify-between items-center">
+                  <div>
+                    <p className="text-sm text-green-800 font-medium">Price per Seat (Auto-calculated)</p>
+                    <p className="text-xs text-green-600">Total price ÷ Available seats</p>
+                  </div>
+                  <div className="text-2xl font-bold text-green-700">
+                    {pricePerSeat ? `₹${pricePerSeat}` : '₹ -'}
+                  </div>
+                </div>
+              </div>
+            </div>
           </form>
         </div>
       </div>
