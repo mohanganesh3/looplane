@@ -5,6 +5,7 @@ import { Login, Register, VerifyOtp, ForgotPassword, ResetPassword } from './pag
 import { SearchRides, PostRide, MyRides } from './pages/rides';
 import { Dashboard } from './pages/user';
 import { MyBookings, BookingDetails } from './pages/bookings';
+import { Home } from './pages/home';
 
 // Placeholder components for routes not yet implemented
 const Placeholder = ({ title }) => (
@@ -29,7 +30,7 @@ function App() {
           <Route path="/auth/reset-password" element={<ResetPassword />} />
 
           {/* Public Routes with Layout */}
-          <Route path="/" element={<Layout><Placeholder title="Home Page" /></Layout>} />
+          <Route path="/" element={<Layout><Home /></Layout>} />
 
           {/* Protected Routes - User */}
           <Route path="/user/dashboard" element={<Layout><Dashboard /></Layout>} />
