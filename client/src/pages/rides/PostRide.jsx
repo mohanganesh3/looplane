@@ -85,10 +85,68 @@ const PostRide = () => {
       const data = await userService.getProfile();
       const approvedVehicles = (data.user?.vehicles || []).filter(v => v.status === 'APPROVED');
       setVehicles(approvedVehicles);
+      if (approvedVehicles.length > 0) {
+        setFormData(prev => ({ ...prev, vehicleId: approvedVehicles[0]._id }));
+      }
     } catch (err) {
       console.error('Failed to load vehicles');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setError('');
+
+    if (!formData.origin || !formData.destination) {
+      setError('Please select valid pickup and drop-off locations');
+      return;
+    }
+
+    if (!formData.vehicleId) {
+      setError('Please select a vehicle');
+      return;
+    }
+
+    if (!formData.totalRidePrice || formData.totalRidePrice <= 0) {
+      setError('Please enter a valid total ride price');
+      return;
+    }
+
+    setSubmitting(true);
+
+    try {
+      const departureTime = new Date(`${formData.date}T${formData.time}`).toISOString();
+
+      const rideData = {
+        originCoordinates: formData.origin,
+        destinationCoordinates: formData.destination,
+        fromLocation: formData.origin.address,
+        toLocation: formData.destination.address,
+        departureTime,
+        vehicleId: formData.vehicleId,
+        availableSeats: parseInt(formData.availableSeats),
+        pricePerSeat: pricePerSeat,
+        distance: parseFloat(distance) || 0,
+        instantBooking: formData.instantBooking,
+        ladiesOnly: formData.ladiesOnly,
+        notes: formData.notes,
+        stops: stops.filter(s => s.location).map(s => s.location)
+      };
+
+      const result = await rideService.postRide(rideData);
+
+      if (result.success) {
+        setSuccess('Ride posted successfully!');
+        setTimeout(() => navigate('/rides/my-rides'), 1500);
+      } else {
+        setError(result.message || 'Failed to post ride');
+      }
+    } catch (err) {
+      setError(err.message || 'Failed to post ride');
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -132,8 +190,9 @@ const PostRide = () => {
         {/* Form Placeholder - Will be completed */}
         <div className="bg-white rounded-2xl shadow-lg p-8">
           {error && <Alert type="error" message={error} onClose={() => setError('')} />}
+          {success && <Alert type="success" message={success} />}
 
-          <form className="space-y-6">
+          <form onSubmit={handleSubmit} className="space-y-6">
             {/* Route Section */}
             <div className="border-b pb-6">
               <h2 className="text-xl font-bold text-gray-800 mb-4">
@@ -278,8 +337,6 @@ const PostRide = () => {
                 </div>
               </div>
             </div>
-
-            <p className="text-gray-500 text-sm">Pricing section coming...</p>
 
             {/* Pricing Section */}
             <div className="border-b pb-6">
