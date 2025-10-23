@@ -160,7 +160,82 @@ const PostRide = () => {
             </div>
 
             {/* More sections coming... */}
-            <p className="text-gray-500 text-sm">More form sections coming...</p>
+            {/* Date & Time Section */}
+            <div className="border-b pb-6">
+              <h2 className="text-xl font-bold text-gray-800 mb-4">
+                <i className="fas fa-calendar-alt text-emerald-500 mr-2"></i>Date & Time
+              </h2>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-gray-700 font-medium mb-2">Departure Date *</label>
+                  <input
+                    type="date"
+                    name="date"
+                    value={formData.date}
+                    onChange={(e) => setFormData(prev => ({ ...prev, date: e.target.value }))}
+                    min={today}
+                    required
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+                  />
+                </div>
+                <div>
+                  <label className="block text-gray-700 font-medium mb-2">Departure Time *</label>
+                  <input
+                    type="time"
+                    name="time"
+                    value={formData.time}
+                    onChange={(e) => setFormData(prev => ({ ...prev, time: e.target.value }))}
+                    required
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Vehicle & Capacity */}
+            <div className="border-b pb-6">
+              <h2 className="text-xl font-bold text-gray-800 mb-4">
+                <i className="fas fa-car text-emerald-500 mr-2"></i>Vehicle & Capacity
+              </h2>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-gray-700 font-medium mb-2">Select Vehicle *</label>
+                  <select
+                    name="vehicleId"
+                    value={formData.vehicleId}
+                    onChange={(e) => setFormData(prev => ({ ...prev, vehicleId: e.target.value }))}
+                    required
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+                  >
+                    <option value="">Choose a vehicle</option>
+                    {vehicles.map((v) => (
+                      <option key={v._id} value={v._id}>
+                        {v.make} {v.model} ({v.color}) - {v.licensePlate}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-gray-700 font-medium mb-2">Available Seats *</label>
+                  <select
+                    name="availableSeats"
+                    value={formData.availableSeats}
+                    onChange={(e) => setFormData(prev => ({ ...prev, availableSeats: e.target.value }))}
+                    required
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+                  >
+                    {[1, 2, 3, 4].map((n) => (
+                      <option key={n} value={n}>{n} seat{n > 1 ? 's' : ''}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+            </div>
+
+            <p className="text-gray-500 text-sm">Pricing section coming...</p>
           </form>
         </div>
       </div>
