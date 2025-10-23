@@ -1,9 +1,20 @@
 import api from './api';
 
 const bookingService = {
-  // Get my bookings
-  getMyBookings: async (status = 'all', page = 1, limit = 10) => {
-    const response = await api.get(`/bookings/my-bookings?status=${status}&page=${page}&limit=${limit}`);
+  // Get my bookings (as passenger)
+  getMyBookings: async (params = {}) => {
+    const queryParams = new URLSearchParams();
+    if (params.status) {
+      if (Array.isArray(params.status)) {
+        params.status.forEach(s => queryParams.append('status', s));
+      } else {
+        queryParams.append('status', params.status);
+      }
+    }
+    if (params.page) queryParams.append('page', params.page);
+    if (params.limit) queryParams.append('limit', params.limit);
+    
+    const response = await api.get(`/bookings/my-bookings?${queryParams.toString()}`);
     return response.data;
   },
 
@@ -13,27 +24,57 @@ const bookingService = {
     return response.data;
   },
 
-  // Create booking
+  // Create booking request
   createBooking: async (rideId, data) => {
     const response = await api.post(`/bookings/create/${rideId}`, data);
     return response.data;
   },
 
   // Cancel booking
-  cancelBooking: async (id) => {
-    const response = await api.post(`/api/bookings/${id}/cancel`);
+  cancelBooking: async (id, reason) => {
+    const response = await api.post(`/bookings/${id}/cancel`, { reason });
     return response.data;
   },
 
-  // Confirm pickup point
-  confirmPickup: async (id, pickupPoint) => {
-    const response = await api.post(`/bookings/${id}/confirm-pickup`, { pickupPoint });
+  // Accept booking (for rider)
+  acceptBooking: async (id) => {
+    const response = await api.post(`/bookings/${id}/accept`);
+    return response.data;
+  },
+
+  // Reject booking (for rider)
+  rejectBooking: async (id, reason) => {
+    const response = await api.post(`/bookings/${id}/reject`, { reason });
+    return response.data;
+  },
+
+  // Confirm pickup with OTP
+  confirmPickup: async (id, otp) => {
+    const response = await api.post(`/bookings/${id}/confirm-pickup`, { otp });
+    return response.data;
+  },
+
+  // Confirm dropoff with OTP
+  confirmDropoff: async (id, otp) => {
+    const response = await api.post(`/bookings/${id}/confirm-dropoff`, { otp });
+    return response.data;
+  },
+
+  // Mark payment as complete
+  completePayment: async (id, paymentDetails) => {
+    const response = await api.post(`/bookings/${id}/payment`, paymentDetails);
     return response.data;
   },
 
   // Get booking payment status
   getPaymentStatus: async (id) => {
     const response = await api.get(`/bookings/${id}/payment`);
+    return response.data;
+  },
+
+  // Rate booking / leave review
+  rateBooking: async (id, reviewData) => {
+    const response = await api.post(`/bookings/${id}/review`, reviewData);
     return response.data;
   }
 };
