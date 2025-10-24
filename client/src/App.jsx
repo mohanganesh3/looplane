@@ -4,7 +4,7 @@ import { Layout } from './components/layout';
 import { Login, Register, VerifyOtp, ForgotPassword, ResetPassword } from './pages/auth';
 import { SearchRides, PostRide, MyRides } from './pages/rides';
 import { Dashboard } from './pages/user';
-import { MyBookings } from './pages/bookings';
+import { MyBookings, BookingDetails } from './pages/bookings';
 
 // Placeholder components for routes not yet implemented
 const Placeholder = ({ title }) => (
@@ -44,7 +44,8 @@ function App() {
 
           {/* Bookings */}
           <Route path="/bookings" element={<Layout><MyBookings /></Layout>} />
-          <Route path="/bookings/:id" element={<Layout><Placeholder title="Booking Details" /></Layout>} />
+          <Route path="/bookings/:id" element={<Layout><BookingDetails /></Layout>} />
+          <Route path="/bookings/:id/rate" element={<Layout><Placeholder title="Rate Booking" /></Layout>} />
 
           {/* Chat */}
           <Route path="/chat" element={<Layout showFooter={false}><Placeholder title="Chat" /></Layout>} />
