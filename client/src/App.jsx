@@ -6,6 +6,7 @@ import { SearchRides, PostRide, MyRides, RideDetails } from './pages/rides';
 import { Dashboard, LicenseUpload } from './pages/user';
 import { MyBookings, BookingDetails } from './pages/bookings';
 import { Home } from './pages/home';
+import { Chat } from './pages/chat';
 
 // Placeholder components for routes not yet implemented
 const Placeholder = ({ title }) => (
@@ -50,8 +51,8 @@ function App() {
           <Route path="/bookings/:id/rate" element={<Layout><Placeholder title="Rate Booking" /></Layout>} />
 
           {/* Chat */}
-          <Route path="/chat" element={<Layout showFooter={false}><Placeholder title="Chat" /></Layout>} />
-          <Route path="/chat/:id" element={<Layout showFooter={false}><Placeholder title="Chat Room" /></Layout>} />
+          <Route path="/chat" element={<Layout showFooter={false}><Chat /></Layout>} />
+          <Route path="/chat/:id" element={<Layout showFooter={false}><Chat /></Layout>} />
 
           {/* Tracking */}
           <Route path="/tracking/:bookingId" element={<Layout showFooter={false}><Placeholder title="Live Tracking" /></Layout>} />
