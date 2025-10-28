@@ -67,6 +67,181 @@ const Profile = () => {
     }
   };
 
+  // Settings Tab Component
+  const SettingsTab = () => {
+    const [settings, setSettings] = useState({
+      emailNotifications: true,
+      smsNotifications: false,
+      pushNotifications: true,
+      rideAlerts: true,
+      marketingEmails: false,
+      twoFactorAuth: false,
+      shareLocation: true,
+      profileVisibility: 'public'
+    });
+
+    const handleToggle = (key) => {
+      setSettings(prev => ({ ...prev, [key]: !prev[key] }));
+    };
+
+    return (
+      <div className="space-y-6">
+        {/* Notification Settings */}
+        <div>
+          <h3 className="text-lg font-medium text-gray-900 mb-4">Notifications</h3>
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-gray-900">Email Notifications</p>
+                <p className="text-xs text-gray-500">Receive ride updates via email</p>
+              </div>
+              <button
+                onClick={() => handleToggle('emailNotifications')}
+                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                  settings.emailNotifications ? 'bg-emerald-500' : 'bg-gray-200'
+                }`}
+              >
+                <span
+                  className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                    settings.emailNotifications ? 'translate-x-6' : 'translate-x-1'
+                  }`}
+                />
+              </button>
+            </div>
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-gray-900">SMS Notifications</p>
+                <p className="text-xs text-gray-500">Get SMS for important updates</p>
+              </div>
+              <button
+                onClick={() => handleToggle('smsNotifications')}
+                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                  settings.smsNotifications ? 'bg-emerald-500' : 'bg-gray-200'
+                }`}
+              >
+                <span
+                  className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                    settings.smsNotifications ? 'translate-x-6' : 'translate-x-1'
+                  }`}
+                />
+              </button>
+            </div>
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-gray-900">Push Notifications</p>
+                <p className="text-xs text-gray-500">Receive push notifications on app</p>
+              </div>
+              <button
+                onClick={() => handleToggle('pushNotifications')}
+                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                  settings.pushNotifications ? 'bg-emerald-500' : 'bg-gray-200'
+                }`}
+              >
+                <span
+                  className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                    settings.pushNotifications ? 'translate-x-6' : 'translate-x-1'
+                  }`}
+                />
+              </button>
+            </div>
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-gray-900">Ride Alerts</p>
+                <p className="text-xs text-gray-500">Get notified about new rides matching your route</p>
+              </div>
+              <button
+                onClick={() => handleToggle('rideAlerts')}
+                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                  settings.rideAlerts ? 'bg-emerald-500' : 'bg-gray-200'
+                }`}
+              >
+                <span
+                  className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                    settings.rideAlerts ? 'translate-x-6' : 'translate-x-1'
+                  }`}
+                />
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* Security Settings */}
+        <div className="border-t border-gray-200 pt-6">
+          <h3 className="text-lg font-medium text-gray-900 mb-4">Security</h3>
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-gray-900">Two-Factor Authentication</p>
+                <p className="text-xs text-gray-500">Add extra security to your account</p>
+              </div>
+              <button
+                onClick={() => handleToggle('twoFactorAuth')}
+                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                  settings.twoFactorAuth ? 'bg-emerald-500' : 'bg-gray-200'
+                }`}
+              >
+                <span
+                  className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                    settings.twoFactorAuth ? 'translate-x-6' : 'translate-x-1'
+                  }`}
+                />
+              </button>
+            </div>
+            <div>
+              <button className="text-sm text-emerald-600 hover:text-emerald-700 font-medium">
+                Change Password
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* Privacy Settings */}
+        <div className="border-t border-gray-200 pt-6">
+          <h3 className="text-lg font-medium text-gray-900 mb-4">Privacy</h3>
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-gray-900">Share Location</p>
+                <p className="text-xs text-gray-500">Allow others to see your live location during rides</p>
+              </div>
+              <button
+                onClick={() => handleToggle('shareLocation')}
+                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                  settings.shareLocation ? 'bg-emerald-500' : 'bg-gray-200'
+                }`}
+              >
+                <span
+                  className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                    settings.shareLocation ? 'translate-x-6' : 'translate-x-1'
+                  }`}
+                />
+              </button>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Profile Visibility</label>
+              <select
+                value={settings.profileVisibility}
+                onChange={(e) => setSettings(prev => ({ ...prev, profileVisibility: e.target.value }))}
+                className="w-full max-w-xs px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+              >
+                <option value="public">Public - Everyone can see</option>
+                <option value="riders">Riders Only - Only people you ride with</option>
+                <option value="private">Private - Only you</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        {/* Save Button */}
+        <div className="flex justify-end pt-6 border-t border-gray-200">
+          <button className="px-6 py-2 bg-emerald-500 text-white rounded-lg hover:bg-emerald-600 transition-colors">
+            Save Settings
+          </button>
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div className="min-h-screen bg-gray-50 py-8">
       <div className="max-w-4xl mx-auto px-4">
@@ -293,8 +468,10 @@ const Profile = () => {
                 </button>
               </div>
             </div>
+          ) : activeTab === 'settings' ? (
+            <SettingsTab />
           ) : (
-            <p className="text-gray-500">Content loading...</p>
+            <PreferencesTab />
           )}
         </div>
       </div>
