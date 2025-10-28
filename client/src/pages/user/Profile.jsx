@@ -242,6 +242,171 @@ const Profile = () => {
     );
   };
 
+  // Preferences Tab Component
+  const PreferencesTab = () => {
+    const [preferences, setPreferences] = useState({
+      musicPreference: 'any',
+      smokingAllowed: false,
+      petsAllowed: true,
+      talkativeRider: 'sometimes',
+      preferredGender: 'any',
+      maxDetour: 10,
+      instantBooking: true,
+      autoAccept: false,
+      verifiedOnly: false
+    });
+
+    const handleToggle = (key) => {
+      setPreferences(prev => ({ ...prev, [key]: !prev[key] }));
+    };
+
+    return (
+      <div className="space-y-6">
+        {/* Ride Comfort */}
+        <div>
+          <h3 className="text-lg font-medium text-gray-900 mb-4">Ride Comfort</h3>
+          <div className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Music Preference</label>
+              <select
+                value={preferences.musicPreference}
+                onChange={(e) => setPreferences(prev => ({ ...prev, musicPreference: e.target.value }))}
+                className="w-full max-w-xs px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+              >
+                <option value="any">Any music is fine</option>
+                <option value="quiet">Prefer quiet rides</option>
+                <option value="my_choice">I like to choose the music</option>
+                <option value="driver_choice">Driver can choose</option>
+              </select>
+            </div>
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-gray-900">Smoking Allowed</p>
+                <p className="text-xs text-gray-500">Allow smoking during rides</p>
+              </div>
+              <button
+                onClick={() => handleToggle('smokingAllowed')}
+                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                  preferences.smokingAllowed ? 'bg-emerald-500' : 'bg-gray-200'
+                }`}
+              >
+                <span
+                  className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                    preferences.smokingAllowed ? 'translate-x-6' : 'translate-x-1'
+                  }`}
+                />
+              </button>
+            </div>
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-gray-900">Pets Allowed</p>
+                <p className="text-xs text-gray-500">Welcome riders with pets</p>
+              </div>
+              <button
+                onClick={() => handleToggle('petsAllowed')}
+                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                  preferences.petsAllowed ? 'bg-emerald-500' : 'bg-gray-200'
+                }`}
+              >
+                <span
+                  className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                    preferences.petsAllowed ? 'translate-x-6' : 'translate-x-1'
+                  }`}
+                />
+              </button>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Conversation Preference</label>
+              <select
+                value={preferences.talkativeRider}
+                onChange={(e) => setPreferences(prev => ({ ...prev, talkativeRider: e.target.value }))}
+                className="w-full max-w-xs px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+              >
+                <option value="always">Love to chat</option>
+                <option value="sometimes">Depends on mood</option>
+                <option value="rarely">Prefer quiet rides</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        {/* Booking Preferences */}
+        <div className="border-t border-gray-200 pt-6">
+          <h3 className="text-lg font-medium text-gray-900 mb-4">Booking Preferences</h3>
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-gray-900">Instant Booking</p>
+                <p className="text-xs text-gray-500">Allow riders to book instantly without approval</p>
+              </div>
+              <button
+                onClick={() => handleToggle('instantBooking')}
+                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                  preferences.instantBooking ? 'bg-emerald-500' : 'bg-gray-200'
+                }`}
+              >
+                <span
+                  className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                    preferences.instantBooking ? 'translate-x-6' : 'translate-x-1'
+                  }`}
+                />
+              </button>
+            </div>
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-gray-900">Verified Users Only</p>
+                <p className="text-xs text-gray-500">Only accept bookings from verified users</p>
+              </div>
+              <button
+                onClick={() => handleToggle('verifiedOnly')}
+                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                  preferences.verifiedOnly ? 'bg-emerald-500' : 'bg-gray-200'
+                }`}
+              >
+                <span
+                  className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                    preferences.verifiedOnly ? 'translate-x-6' : 'translate-x-1'
+                  }`}
+                />
+              </button>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Maximum Detour (km)</label>
+              <input
+                type="range"
+                min="0"
+                max="30"
+                value={preferences.maxDetour}
+                onChange={(e) => setPreferences(prev => ({ ...prev, maxDetour: parseInt(e.target.value) }))}
+                className="w-full max-w-xs"
+              />
+              <p className="text-sm text-gray-500 mt-1">{preferences.maxDetour} km</p>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Preferred Co-rider Gender</label>
+              <select
+                value={preferences.preferredGender}
+                onChange={(e) => setPreferences(prev => ({ ...prev, preferredGender: e.target.value }))}
+                className="w-full max-w-xs px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+              >
+                <option value="any">No preference</option>
+                <option value="male">Male only</option>
+                <option value="female">Female only</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        {/* Save Button */}
+        <div className="flex justify-end pt-6 border-t border-gray-200">
+          <button className="px-6 py-2 bg-emerald-500 text-white rounded-lg hover:bg-emerald-600 transition-colors">
+            Save Preferences
+          </button>
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div className="min-h-screen bg-gray-50 py-8">
       <div className="max-w-4xl mx-auto px-4">
