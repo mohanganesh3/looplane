@@ -15,6 +15,31 @@ const Login = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [validationErrors, setValidationErrors] = useState({});
+
+  const validateEmail = (email) => {
+    const re = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    return re.test(email);
+  };
+
+  const validateForm = () => {
+    const errors = {};
+    
+    if (!formData.email) {
+      errors.email = 'Email is required';
+    } else if (!validateEmail(formData.email)) {
+      errors.email = 'Please enter a valid email address';
+    }
+    
+    if (!formData.password) {
+      errors.password = 'Password is required';
+    } else if (formData.password.length < 6) {
+      errors.password = 'Password must be at least 6 characters';
+    }
+    
+    setValidationErrors(errors);
+    return Object.keys(errors).length === 0;
+  };
 
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target;
@@ -22,11 +47,20 @@ const Login = () => {
       ...prev,
       [name]: type === 'checkbox' ? checked : value
     }));
+    // Clear validation error when user starts typing
+    if (validationErrors[name]) {
+      setValidationErrors(prev => ({ ...prev, [name]: '' }));
+    }
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
+
+    if (!validateForm()) {
+      return;
+    }
+
     setLoading(true);
 
     try {
