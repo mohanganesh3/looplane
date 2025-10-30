@@ -213,9 +213,43 @@ const Register = () => {
                   <i className={`fas ${showPassword ? 'fa-eye-slash' : 'fa-eye'}`}></i>
                 </button>
               </div>
-              <p className="text-xs text-gray-500 mt-1">
-                Must contain uppercase, lowercase, number & special char
-              </p>
+              {/* Password Strength Indicator */}
+              {formData.password && (
+                <div className="mt-2">
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-xs text-gray-500">Password strength:</span>
+                    <span className={`text-xs font-medium ${
+                      passwordStrength.label === 'Weak' ? 'text-red-500' :
+                      passwordStrength.label === 'Medium' ? 'text-yellow-500' : 'text-emerald-500'
+                    }`}>
+                      {passwordStrength.label}
+                    </span>
+                  </div>
+                  <div className="w-full h-1 bg-gray-200 rounded-full overflow-hidden">
+                    <div 
+                      className={`h-full transition-all duration-300 ${passwordStrength.color}`}
+                      style={{ width: `${(passwordStrength.score / 6) * 100}%` }}
+                    />
+                  </div>
+                  <div className="mt-2 space-y-1">
+                    <p className={`text-xs ${formData.password.length >= 8 ? 'text-emerald-500' : 'text-gray-400'}`}>
+                      {formData.password.length >= 8 ? '✓' : '○'} At least 8 characters
+                    </p>
+                    <p className={`text-xs ${/[A-Z]/.test(formData.password) ? 'text-emerald-500' : 'text-gray-400'}`}>
+                      {/[A-Z]/.test(formData.password) ? '✓' : '○'} One uppercase letter
+                    </p>
+                    <p className={`text-xs ${/[a-z]/.test(formData.password) ? 'text-emerald-500' : 'text-gray-400'}`}>
+                      {/[a-z]/.test(formData.password) ? '✓' : '○'} One lowercase letter
+                    </p>
+                    <p className={`text-xs ${/[0-9]/.test(formData.password) ? 'text-emerald-500' : 'text-gray-400'}`}>
+                      {/[0-9]/.test(formData.password) ? '✓' : '○'} One number
+                    </p>
+                    <p className={`text-xs ${/[^A-Za-z0-9]/.test(formData.password) ? 'text-emerald-500' : 'text-gray-400'}`}>
+                      {/[^A-Za-z0-9]/.test(formData.password) ? '✓' : '○'} One special character
+                    </p>
+                  </div>
+                </div>
+              )}
             </div>
 
             <div>
@@ -228,9 +262,21 @@ const Register = () => {
                 value={formData.confirmPassword}
                 onChange={handleChange}
                 required
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+                className={`w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent ${
+                  formData.confirmPassword && formData.password !== formData.confirmPassword 
+                    ? 'border-red-500' 
+                    : formData.confirmPassword && formData.password === formData.confirmPassword
+                      ? 'border-emerald-500'
+                      : 'border-gray-300'
+                }`}
                 placeholder="Re-enter password"
               />
+              {formData.confirmPassword && formData.password !== formData.confirmPassword && (
+                <p className="text-xs text-red-500 mt-1">Passwords do not match</p>
+              )}
+              {formData.confirmPassword && formData.password === formData.confirmPassword && (
+                <p className="text-xs text-emerald-500 mt-1">✓ Passwords match</p>
+              )}
             </div>
 
             <div>
