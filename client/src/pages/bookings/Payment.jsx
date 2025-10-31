@@ -167,7 +167,40 @@ const Payment = () => {
               <span className="text-gray-900">Total Amount</span>
               <span className="text-emerald-600">₹{booking.totalAmount}</span>
             </div>
+            {discount > 0 && (
+              <>
+                <div className="flex justify-between text-sm text-green-600">
+                  <span>Discount Applied</span>
+                  <span>-₹{discount}</span>
+                </div>
+                <div className="flex justify-between text-base font-semibold">
+                  <span className="text-gray-900">Final Amount</span>
+                  <span className="text-emerald-600">₹{booking.totalAmount - discount}</span>
+                </div>
+              </>
+            )}
           </div>
+        </div>
+
+        {/* Coupon Section */}
+        <div className="bg-white rounded-lg shadow-sm p-6 mb-6">
+          <h2 className="text-lg font-semibold text-gray-900 mb-4">Apply Coupon</h2>
+          <div className="flex space-x-2">
+            <input
+              type="text"
+              value={couponCode}
+              onChange={(e) => setCouponCode(e.target.value)}
+              placeholder="Enter coupon code"
+              className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+            />
+            <button
+              onClick={handleApplyCoupon}
+              className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors font-medium"
+            >
+              Apply
+            </button>
+          </div>
+          <p className="text-xs text-gray-500 mt-2">Try: FIRST50 or SAVE10</p>
         </div>
 
         {/* Payment Methods */}
