@@ -288,15 +288,80 @@ const Payment = () => {
               <span className="text-xl">💵</span>
             </label>
           </div>
+
+          {/* UPI Input */}
+          {paymentMethod === 'upi' && (
+            <div className="mt-4 p-4 bg-gray-50 rounded-lg">
+              <label className="block text-sm font-medium text-gray-700 mb-2">UPI ID</label>
+              <input
+                type="text"
+                value={upiId}
+                onChange={(e) => setUpiId(e.target.value)}
+                placeholder="example@upi"
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+              />
+            </div>
+          )}
+
+          {/* Card Details Input */}
+          {paymentMethod === 'card' && (
+            <div className="mt-4 p-4 bg-gray-50 rounded-lg space-y-3">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Card Number</label>
+                <input
+                  type="text"
+                  value={cardDetails.number}
+                  onChange={(e) => setCardDetails(prev => ({ ...prev, number: e.target.value }))}
+                  placeholder="1234 5678 9012 3456"
+                  maxLength={19}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Cardholder Name</label>
+                <input
+                  type="text"
+                  value={cardDetails.name}
+                  onChange={(e) => setCardDetails(prev => ({ ...prev, name: e.target.value }))}
+                  placeholder="Name on card"
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Expiry</label>
+                  <input
+                    type="text"
+                    value={cardDetails.expiry}
+                    onChange={(e) => setCardDetails(prev => ({ ...prev, expiry: e.target.value }))}
+                    placeholder="MM/YY"
+                    maxLength={5}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">CVV</label>
+                  <input
+                    type="password"
+                    value={cardDetails.cvv}
+                    onChange={(e) => setCardDetails(prev => ({ ...prev, cvv: e.target.value }))}
+                    placeholder="***"
+                    maxLength={3}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+                  />
+                </div>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Pay Button */}
         <Button
-          onClick={() => {}}
+          onClick={handlePayment}
           loading={processing}
           className="w-full"
         >
-          Pay ₹{booking.totalAmount}
+          Pay ₹{booking.totalAmount - discount}
         </Button>
 
         <p className="text-xs text-gray-500 text-center mt-4">
