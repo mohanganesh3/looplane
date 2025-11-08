@@ -1,3 +1,8 @@
 export { default as Dashboard } from './Dashboard';
 export { default as LicenseUpload } from './LicenseUpload';
 export { default as Profile } from './Profile';
+export { default as Settings } from './Settings';
+export { default as TripHistory } from './TripHistory';
+export { default as CarbonReport } from './CarbonReport';
+export { default as EmergencyContacts } from './EmergencyContacts';
+export { default as Notifications } from './Notifications';
