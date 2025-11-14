@@ -77,7 +77,7 @@ function App() {
                   </Layout>
                 </ProtectedRoute>
               } />
-              <Route path="/ride/:id" element={
+              <Route path="/rides/:id" element={
                 <ProtectedRoute>
                   <Layout>
                     <RideDetails />
@@ -98,7 +98,7 @@ function App() {
                   </Layout>
                 </ProtectedRoute>
               } />
-              <Route path="/booking/:id" element={
+              <Route path="/bookings/:id" element={
                 <ProtectedRoute>
                   <Layout>
                     <BookingDetails />

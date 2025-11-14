@@ -43,7 +43,7 @@ function Navbar({ adminTheme = false }) {
 
           {/* Desktop Navigation */}
           <div className="hidden md:flex items-center space-x-6">
-            {(isAdminRoute || adminTheme) && user?.role === 'admin' ? (
+            {(isAdminRoute || adminTheme) && user?.role === 'ADMIN' ? (
               <>
                 {adminNavLinks.map((link) => (
                   <Link
@@ -116,7 +116,7 @@ function Navbar({ adminTheme = false }) {
                       <Link to="/reviews" className="block px-4 py-2 text-gray-700 hover:bg-gray-100">
                         My Reviews
                       </Link>
-                      {user.role === 'admin' && (
+                      {user.role === 'ADMIN' && (
                         <>
                           <hr className="my-2" />
                           <Link to="/admin/dashboard" className="block px-4 py-2 text-gray-700 hover:bg-gray-100">

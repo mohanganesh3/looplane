@@ -17,7 +17,9 @@ const helpers = require('../utils/helpers');
 exports.createBooking = asyncHandler(async (req, res) => {
     console.log('📝 [Create Booking] Request received', 'Body:', req.body, 'User:', req.user._id);
 
-    const { rideId, pickupLocation, dropoffLocation, seats, paymentMethod, specialRequests } = req.body;
+    // Get rideId from URL params OR body for backwards compatibility
+    const rideId = req.params.rideId || req.body.rideId;
+    const { pickupLocation, dropoffLocation, seats, paymentMethod, specialRequests, pickupPoint, dropoffPoint, seatsBooked } = req.body;
 
     const ride = await Ride.findById(rideId).populate('rider', 'name email phone profile');
 
@@ -30,7 +32,7 @@ exports.createBooking = asyncHandler(async (req, res) => {
         throw new AppError('This ride is for female passengers only', 403);
     }
 
-    const numSeats = parseInt(seats);
+    const numSeats = parseInt(seats || seatsBooked || 1);
     if (ride.pricing.availableSeats < numSeats) throw new AppError('Not enough seats available', 400);
 
     // Check if user already has a booking
@@ -38,13 +40,44 @@ exports.createBooking = asyncHandler(async (req, res) => {
         throw new AppError('You already have a booking for this ride', 400);
     }
 
-    // Parse locations with error handling
+    // Parse locations with error handling - support both JSON and string formats
     let pickup, dropoff;
     try {
-        pickup = JSON.parse(pickupLocation);
-        dropoff = JSON.parse(dropoffLocation);
+        // Handle pickupLocation (JSON string) or pickupPoint (simple string)
+        if (pickupLocation) {
+            pickup = typeof pickupLocation === 'string' ? JSON.parse(pickupLocation) : pickupLocation;
+        } else if (pickupPoint) {
+            // Simple string address - use ride's source as default coordinates
+            pickup = {
+                address: pickupPoint,
+                coordinates: ride.route?.start?.coordinates || ride.source?.coordinates
+            };
+        } else {
+            // Default to ride's source
+            pickup = {
+                address: ride.source?.address || ride.route?.start?.address,
+                coordinates: ride.source?.coordinates || ride.route?.start?.coordinates
+            };
+        }
+
+        // Handle dropoffLocation (JSON string) or dropoffPoint (simple string)
+        if (dropoffLocation) {
+            dropoff = typeof dropoffLocation === 'string' ? JSON.parse(dropoffLocation) : dropoffLocation;
+        } else if (dropoffPoint) {
+            // Simple string address - use ride's destination as default coordinates
+            dropoff = {
+                address: dropoffPoint,
+                coordinates: ride.route?.destination?.coordinates || ride.destination?.coordinates
+            };
+        } else {
+            // Default to ride's destination
+            dropoff = {
+                address: ride.destination?.address || ride.route?.destination?.address,
+                coordinates: ride.destination?.coordinates || ride.route?.destination?.coordinates
+            };
+        }
     } catch (error) {
-        console.error('❌ [Create Booking] Invalid JSON:', error.message);
+        console.error('❌ [Create Booking] Location parsing error:', error.message);
         throw new AppError('Invalid location data format', 400);
     }
 

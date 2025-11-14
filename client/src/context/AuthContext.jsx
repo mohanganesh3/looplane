@@ -14,8 +14,9 @@ export function AuthProvider({ children }) {
 
   const checkAuth = async () => {
     try {
-      const response = await api.get('/api/users/profile')
-      if (response.data?.user) {
+      // Use the profile endpoint that returns full user data
+      const response = await api.get('/user/profile')
+      if (response.data?.success && response.data?.user) {
         setUser(response.data.user)
       }
     } catch (error) {

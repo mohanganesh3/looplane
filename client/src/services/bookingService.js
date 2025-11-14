@@ -50,13 +50,13 @@ const bookingService = {
 
   // Confirm pickup with OTP
   confirmPickup: async (id, otp) => {
-    const response = await api.post(`/bookings/${id}/confirm-pickup`, { otp });
+    const response = await api.post(`/bookings/${id}/verify-pickup`, { otp });
     return response.data;
   },
 
   // Confirm dropoff with OTP
   confirmDropoff: async (id, otp) => {
-    const response = await api.post(`/bookings/${id}/confirm-dropoff`, { otp });
+    const response = await api.post(`/bookings/${id}/verify-dropoff`, { otp });
     return response.data;
   },
 

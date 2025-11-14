@@ -26,6 +26,38 @@ export default defineConfig({
         target: 'http://localhost:3000',
         changeOrigin: true
       },
+      '/chat': {
+        target: 'http://localhost:3000',
+        changeOrigin: true
+      },
+      '/tracking': {
+        target: 'http://localhost:3000',
+        changeOrigin: true
+      },
+      '/admin': {
+        target: 'http://localhost:3000',
+        changeOrigin: true
+      },
+      '/reports': {
+        target: 'http://localhost:3000',
+        changeOrigin: true
+      },
+      '/reviews': {
+        target: 'http://localhost:3000',
+        changeOrigin: true
+      },
+      '/sos': {
+        target: 'http://localhost:3000',
+        changeOrigin: true
+      },
+      '/geo-fencing': {
+        target: 'http://localhost:3000',
+        changeOrigin: true
+      },
+      '/uploads': {
+        target: 'http://localhost:3000',
+        changeOrigin: true
+      },
       '/socket.io': {
         target: 'http://localhost:3000',
         ws: true

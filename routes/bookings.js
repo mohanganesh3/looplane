@@ -12,7 +12,7 @@ const {
 } = require('../middleware/validation');
 
 // Create Booking
-router.post('/create',
+router.post('/create/:rideId',
     isAuthenticated,
     validateBooking,
     handleValidationErrors,
