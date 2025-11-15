@@ -22,7 +22,7 @@ const ForgotPassword = () => {
       if (result.success) {
         setSuccess(result.message || 'Reset code sent to your email!');
         setTimeout(() => {
-          navigate(result.redirectUrl || '/auth/reset-password');
+          navigate(result.redirectUrl || '/reset-password');
         }, 2000);
       } else {
         setError(result.message || 'Failed to send reset code');
@@ -41,7 +41,7 @@ const ForgotPassword = () => {
           {/* Back Button */}
           <div className="mb-6">
             <Link 
-              to="/auth/login" 
+              to="/login" 
               className="inline-flex items-center text-gray-600 hover:text-emerald-500 transition-colors"
             >
               <i className="fas fa-arrow-left mr-2"></i>
@@ -117,7 +117,7 @@ const ForgotPassword = () => {
           <div className="mt-6 text-center">
             <p className="text-sm text-gray-600">
               Remember your password?{' '}
-              <Link to="/auth/login" className="text-emerald-500 hover:text-emerald-600 font-semibold">
+              <Link to="/login" className="text-emerald-500 hover:text-emerald-600 font-semibold">
                 Login here
               </Link>
             </p>

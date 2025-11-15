@@ -82,13 +82,14 @@ const ResetPassword = () => {
     try {
       const result = await authService.resetPassword(
         formData.otp,
-        formData.newPassword
+        formData.newPassword,
+        formData.confirmPassword
       );
 
       if (result.success) {
         setSuccess(result.message || 'Password reset successful!');
         setTimeout(() => {
-          navigate(result.redirectUrl || '/auth/login');
+          navigate(result.redirectUrl || '/login');
         }, 2000);
       } else {
         setError(result.message || 'Failed to reset password');
@@ -119,7 +120,7 @@ const ResetPassword = () => {
           {/* Back Button */}
           <div className="mb-6">
             <Link 
-              to="/auth/forgot-password" 
+              to="/forgot-password" 
               className="inline-flex items-center text-gray-600 hover:text-emerald-500 transition-colors"
             >
               <i className="fas fa-arrow-left mr-2"></i>
@@ -304,7 +305,7 @@ const ResetPassword = () => {
           <div className="mt-6 text-center">
             <p className="text-sm text-gray-600">
               Didn't receive the code?{' '}
-              <Link to="/auth/forgot-password" className="text-emerald-500 hover:text-emerald-600 font-semibold">
+              <Link to="/forgot-password" className="text-emerald-500 hover:text-emerald-600 font-semibold">
                 Resend Code
               </Link>
             </p>

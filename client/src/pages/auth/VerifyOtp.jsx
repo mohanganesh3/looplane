@@ -1,10 +1,12 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../../context/AuthContext';
 import { Button, Alert } from '../../components/common';
 import authService from '../../services/authService';
 
 const VerifyOtp = () => {
   const navigate = useNavigate();
+  const { refreshUser } = useAuth();
   const [otp, setOtp] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -30,9 +32,15 @@ const VerifyOtp = () => {
       const result = await authService.verifyOtp(otp);
       
       if (result.success) {
-        setSuccess('Verification successful!');
+        setSuccess('Verification successful! Logging you in...');
+        
+        // ✅ Refresh user data from server to update auth context
+        await refreshUser();
+        
         setTimeout(() => {
-          navigate(result.redirectUrl || '/user/dashboard');
+          // Use the redirectUrl from server, fallback to /dashboard
+          const redirectUrl = result.redirectUrl || '/dashboard';
+          navigate(redirectUrl);
         }, 1000);
       } else {
         setError(result.message || 'Invalid OTP');

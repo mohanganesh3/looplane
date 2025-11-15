@@ -98,7 +98,7 @@ const ChangePassword = () => {
       if (result.success) {
         setSuccess('Password changed successfully!');
         setFormData({ currentPassword: '', newPassword: '', confirmPassword: '' });
-        setTimeout(() => navigate('/user/profile'), 2000);
+        setTimeout(() => navigate('/profile'), 2000);
       } else {
         setError(result.message || 'Failed to change password');
       }
@@ -114,7 +114,7 @@ const ChangePassword = () => {
       <div className="max-w-md mx-auto px-4">
         <div className="bg-white rounded-lg shadow-sm p-6">
           <div className="mb-6">
-            <Link to="/user/profile" className="text-emerald-500 hover:text-emerald-600 text-sm">
+            <Link to="/profile" className="text-emerald-500 hover:text-emerald-600 text-sm">
               ← Back to Profile
             </Link>
           </div>
@@ -217,7 +217,7 @@ const ChangePassword = () => {
           </form>
 
           <div className="mt-6 text-center">
-            <Link to="/auth/forgot-password" className="text-sm text-emerald-500 hover:text-emerald-600">
+            <Link to="/forgot-password" className="text-sm text-emerald-500 hover:text-emerald-600">
               Forgot your password?
             </Link>
           </div>
