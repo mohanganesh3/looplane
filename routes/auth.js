@@ -1,11 +1,10 @@
 /**
- * Authentication Routes
+ * Authentication Routes - API Only (React SPA)
  */
 
 const express = require('express');
 const router = express.Router();
 const authController = require('../controllers/authController');
-// Rate limiter removed
 const {
     validateRegistration,
     validateLogin,
@@ -17,63 +16,57 @@ const {
 } = require('../middleware/validation');
 const { isAuthenticated } = require('../middleware/auth');
 
-// Registration
-router.get('/register', authController.showRegisterPage);
+// Registration API
 router.post('/register',
     validateRegistration,
     handleValidationErrors,
     authController.register
 );
 
-// OTP Verification
-router.get('/verify-otp', authController.showVerifyOTPPage);
+// OTP Verification API
 router.post('/verify-otp',
     validateOTP,
     handleValidationErrors,
     authController.verifyOTP
 );
-router.post('/resend-otp',
-    authController.resendOTP
-);
 
-// Login
-router.get('/login', authController.showLoginPage);
+// Resend OTP API
+router.post('/resend-otp', authController.resendOTP);
+
+// Login API
 router.post('/login',
     validateLogin,
     handleValidationErrors,
     authController.login
 );
 
-// Logout
-router.get('/logout', isAuthenticated, authController.logout);
+// Logout API
 router.post('/logout', isAuthenticated, authController.logout);
+router.get('/logout', isAuthenticated, authController.logout);
 
-// Forgot Password
-router.get('/forgot-password', authController.showForgotPasswordPage);
+// Forgot Password API
 router.post('/forgot-password',
     validateForgotPassword,
     handleValidationErrors,
     authController.forgotPassword
 );
 
-// Reset Password
-router.get('/reset-password', authController.showResetPasswordPage);
+// Reset Password API
 router.post('/reset-password',
     validateResetPassword,
     handleValidationErrors,
     authController.resetPassword
 );
 
-// Change Password (for logged-in users)
-router.get('/change-password',
-    isAuthenticated,
-    authController.showChangePasswordPage
-);
+// Change Password API (for logged-in users)
 router.post('/change-password',
     isAuthenticated,
     validatePasswordChange,
     handleValidationErrors,
     authController.changePassword
 );
+
+// Get current session/user status
+router.get('/me', isAuthenticated, authController.getCurrentUser);
 
 module.exports = router;

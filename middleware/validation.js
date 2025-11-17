@@ -224,6 +224,10 @@ exports.validateRidePost = [
  * Ride update validation rules
  */
 exports.validateRideUpdate = [
+    body('departureTime')
+        .optional()
+        .isISO8601().withMessage('Invalid departure time format'),
+    
     body('date')
         .optional()
         .isISO8601().withMessage('Invalid date format')
@@ -240,32 +244,55 @@ exports.validateRideUpdate = [
     
     body('pricePerSeat')
         .optional()
-        .isFloat({ min: 0 }).withMessage('Price must be a positive number'),
+        .isFloat({ min: 1 }).withMessage('Price must be at least ₹1'),
+    
+    body('availableSeats')
+        .optional()
+        .isInt({ min: 1, max: 7 }).withMessage('Seats must be between 1 and 7'),
     
     body('totalSeats')
         .optional()
-        .isInt({ min: 1, max: 7 }).withMessage('Seats must be between 1 and 7')
+        .isInt({ min: 1, max: 7 }).withMessage('Seats must be between 1 and 7'),
+    
+    body('preferences')
+        .optional()
+        .custom((value) => {
+            if (typeof value === 'string') {
+                try {
+                    JSON.parse(value);
+                    return true;
+                } catch (e) {
+                    return false;
+                }
+            }
+            return typeof value === 'object';
+        }).withMessage('Invalid preferences format')
 ];
 
 /**
  * Booking validation rules
  */
 exports.validateBooking = [
-    body('rideId')
+    // rideId comes from URL params, not body - validate it there
+    param('rideId')
         .notEmpty().withMessage('Ride ID is required')
         .isMongoId().withMessage('Invalid ride ID'),
     
+    // Accept both 'seats' and 'seatsBooked' field names
+    body('seatsBooked')
+        .optional()
+        .isInt({ min: 1, max: 7 }).withMessage('Seats must be between 1 and 7'),
     body('seats')
+        .optional()
         .isInt({ min: 1, max: 7 }).withMessage('Seats must be between 1 and 7'),
     
     body('pickupLocation')
-        .notEmpty().withMessage('Pickup location is required')
+        .optional()
         .custom((value) => {
+            if (!value) return true;
             try {
-                const parsed = JSON.parse(value);
-                if (!parsed.coordinates || !Array.isArray(parsed.coordinates) || parsed.coordinates.length !== 2) {
-                    throw new Error('Invalid pickup location format');
-                }
+                const parsed = typeof value === 'string' ? JSON.parse(value) : value;
+                // Coordinates are optional - backend will use ride's coordinates as fallback
                 return true;
             } catch (error) {
                 throw new Error('Invalid pickup location JSON');
@@ -273,13 +300,12 @@ exports.validateBooking = [
         }),
     
     body('dropoffLocation')
-        .notEmpty().withMessage('Dropoff location is required')
+        .optional()
         .custom((value) => {
+            if (!value) return true;
             try {
-                const parsed = JSON.parse(value);
-                if (!parsed.coordinates || !Array.isArray(parsed.coordinates) || parsed.coordinates.length !== 2) {
-                    throw new Error('Invalid dropoff location format');
-                }
+                const parsed = typeof value === 'string' ? JSON.parse(value) : value;
+                // Coordinates are optional - backend will use ride's coordinates as fallback
                 return true;
             } catch (error) {
                 throw new Error('Invalid dropoff location JSON');

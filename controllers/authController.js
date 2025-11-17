@@ -6,7 +6,6 @@
 const User = require('../models/User');
 const { AppError, asyncHandler } = require('../middleware/errorHandler');
 const emailService = require('../utils/emailService');
-const smsService = require('../utils/smsService');
 const helpers = require('../utils/helpers');
 
 /**
@@ -147,10 +146,14 @@ exports.verifyOTP = asyncHandler(async (req, res) => {
     req.session.userRole = user.role;
     delete req.session.registrationUserId;
 
+    // ✅ Redirect RIDERS to complete profile page with vehicle details
+    // PASSENGERS go directly to dashboard
+    const redirectUrl = user.role === 'RIDER' ? '/complete-profile' : '/dashboard';
+    
     res.status(200).json({
         success: true,
         message: 'Registration successful',
-        redirectUrl: user.role === 'RIDER' ? '/user/complete-profile' : '/user/dashboard'
+        redirectUrl: redirectUrl
     });
 });
 
@@ -210,7 +213,7 @@ exports.showLoginPage = (req, res) => {
  * Handle login
  */
 exports.login = asyncHandler(async (req, res) => {
-    const { email, password } = req.body;
+    const { email, password, otp } = req.body;
 
     // Find user by email
     const user = await User.findOne({ email }).select('+password');
@@ -246,6 +249,37 @@ exports.login = asyncHandler(async (req, res) => {
         throw new AppError('This account no longer exists.', 403);
     }
 
+    // ✅ CHECK TWO-FACTOR AUTHENTICATION
+    if (user.preferences?.security?.twoFactorEnabled) {
+        // If OTP not provided, send it and require verification
+        if (!otp) {
+            // Generate OTP for 2FA
+            const twoFactorOtp = Math.floor(100000 + Math.random() * 900000).toString();
+            user.otp = twoFactorOtp;
+            user.otpExpires = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
+            await user.save();
+            
+            // Send OTP via email
+            const emailService = require('../utils/emailService');
+            await emailService.sendOTPEmail(user.email, twoFactorOtp, user.profile?.firstName || 'User');
+            
+            return res.status(403).json({
+                success: false,
+                requiresTwoFactor: true,
+                message: 'Two-factor authentication required. Please check your email for OTP.'
+            });
+        }
+        
+        // Verify OTP
+        if (user.otp !== otp || new Date() > user.otpExpires) {
+            throw new AppError('Invalid or expired OTP', 401);
+        }
+        
+        // Clear OTP after successful verification
+        user.otp = undefined;
+        user.otpExpires = undefined;
+    }
+
     // Log in the user (no OTP required for login)
     req.session.userId = user._id.toString();
     req.session.userRole = user.role;
@@ -257,9 +291,23 @@ exports.login = asyncHandler(async (req, res) => {
     // Redirect based on role
     const redirectUrl = user.role === 'ADMIN' ? '/admin/dashboard' : '/user/dashboard';
 
+    // Return user data (without password)
+    const userData = {
+        _id: user._id,
+        email: user.email,
+        phone: user.phone,
+        role: user.role,
+        profile: user.profile,
+        emailVerified: user.emailVerified,
+        phoneVerified: user.phoneVerified,
+        verificationStatus: user.verificationStatus,
+        accountStatus: user.accountStatus
+    };
+
     res.status(200).json({
         success: true,
         message: 'Login successful',
+        user: userData,
         redirectUrl
     });
 });
@@ -271,8 +319,17 @@ exports.logout = (req, res) => {
     req.session.destroy((err) => {
         if (err) {
             console.error('Session destruction error:', err);
+            return res.status(500).json({
+                success: false,
+                message: 'Logout failed'
+            });
         }
-        res.redirect('/auth/login');
+        res.clearCookie('connect.sid');
+        return res.status(200).json({
+            success: true,
+            message: 'Logged out successfully',
+            redirectUrl: '/login'
+        });
     });
 };
 
@@ -505,5 +562,35 @@ exports.changePassword = asyncHandler(async (req, res) => {
     res.status(200).json({
         success: true,
         message: 'Password changed successfully'
+    });
+});
+
+/**
+ * Get current authenticated user (API)
+ */
+exports.getCurrentUser = asyncHandler(async (req, res) => {
+    const user = await User.findById(req.user._id)
+        .select('-password')
+        .populate('vehicles');
+
+    if (!user) {
+        throw new AppError('User not found', 404);
+    }
+
+    res.json({
+        success: true,
+        user: {
+            _id: user._id,
+            email: user.email,
+            phone: user.phone,
+            role: user.role,
+            profile: user.profile,
+            verificationStatus: user.verificationStatus,
+            accountStatus: user.accountStatus,
+            emailVerified: user.emailVerified,
+            vehicles: user.vehicles || [],
+            preferences: user.preferences,
+            createdAt: user.createdAt
+        }
     });
 });
