@@ -28,7 +28,7 @@ function Footer({ adminTheme = false }) {
           {/* About */}
           <div>
             <div className="flex items-center space-x-2 mb-4">
-              <span className="text-emerald-500 text-2xl">🚗</span>
+              <i className="fas fa-car-side text-emerald-500 text-2xl"></i>
               <span className="text-2xl font-bold">LOOPLANE</span>
             </div>
             <p className="text-gray-400 text-sm">
@@ -36,13 +36,13 @@ function Footer({ adminTheme = false }) {
             </p>
             <div className="flex space-x-4 mt-4">
               <a href="#" className="text-gray-400 hover:text-emerald-500 transition">
-                Facebook
+                <i className="fab fa-facebook-f"></i>
               </a>
               <a href="#" className="text-gray-400 hover:text-emerald-500 transition">
-                Twitter
+                <i className="fab fa-twitter"></i>
               </a>
               <a href="#" className="text-gray-400 hover:text-emerald-500 transition">
-                Instagram
+                <i className="fab fa-instagram"></i>
               </a>
             </div>
           </div>
@@ -105,16 +105,16 @@ function Footer({ adminTheme = false }) {
           <div>
             <h3 className="text-lg font-semibold mb-4">Contact Us</h3>
             <ul className="space-y-2 text-sm text-gray-400">
-              <li>📧 support@looplane.com</li>
-              <li>📞 +91 99999 99999</li>
-              <li>📍 Mumbai, Maharashtra, India</li>
+              <li><i className="fas fa-envelope mr-2"></i>support@looplane.com</li>
+              <li><i className="fas fa-phone mr-2"></i>+91 99999 99999</li>
+              <li><i className="fas fa-map-marker-alt mr-2"></i>Mumbai, Maharashtra, India</li>
             </ul>
           </div>
         </div>
 
         <div className="border-t border-gray-700 mt-8 pt-8 text-center text-sm text-gray-400">
           <p>&copy; {currentYear} LOOPLANE Carpool Platform. All rights reserved.</p>
-          <p className="mt-2">Built with ❤️ for a greener future 🌱</p>
+          <p className="mt-2">Built with <i className="fas fa-heart text-red-500"></i> for a greener future <i className="fas fa-seedling text-green-500"></i></p>
         </div>
       </div>
     </footer>
