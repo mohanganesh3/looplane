@@ -9,6 +9,7 @@ const Booking = require('../models/Booking');
 const Review = require('../models/Review');
 const Notification = require('../models/Notification');
 const carbonCalculator = require('../utils/carbonCalculator');
+const trustScoreCalculator = require('../utils/trustScoreCalculator');
 const { AppError, asyncHandler } = require('../middleware/errorHandler');
 const helpers = require('../utils/helpers');
 const { sendEmail } = require('../config/email');
@@ -17,21 +18,66 @@ const { sendEmail } = require('../config/email');
  * Show user dashboard
  */
 exports.showDashboard = asyncHandler(async (req, res) => {
-    const user = req.user;
     const now = new Date();
+    
+    console.log('📊 [Dashboard] Request from user:', req.user?._id);
+    
+    // Re-fetch user with complete data including vehicles and documents
+    const user = await User.findById(req.user._id)
+        .select('role vehicles documents verificationStatus profile email rating statistics')
+        .lean();
+    
+    console.log('📊 [Dashboard] User fetched:', user ? {
+        _id: user._id,
+        email: user.email,
+        role: user.role,
+        vehiclesCount: user.vehicles?.length || 0,
+        vehicles: user.vehicles?.map(v => ({ licensePlate: v.licensePlate, status: v.status }))
+    } : 'NOT FOUND');
+    
+    if (!user) {
+        return res.status(404).json({
+            success: false,
+            message: 'User not found'
+        });
+    }
 
-    // Check if RIDER needs to complete profile
+    // Check if RIDER needs to complete profile - return JSON for React frontend
     if (user.role === 'RIDER') {
-        // Check if vehicles array is empty or doesn't exist
-        if (!user.vehicles || user.vehicles.length === 0) {
-            req.flash('info', 'Please complete your profile and add vehicle details');
-            return res.redirect('/user/complete-profile');
+        // Check if vehicles array is empty or doesn't exist OR no approved vehicles
+        const hasApprovedVehicle = user.vehicles && user.vehicles.some(v => v.status === 'APPROVED');
+        const hasAnyVehicle = user.vehicles && user.vehicles.length > 0;
+        
+        console.log('📊 [Dashboard] Profile check:', { 
+            role: user.role, 
+            hasAnyVehicle, 
+            hasApprovedVehicle,
+            vehiclesArray: user.vehicles
+        });
+        
+        if (!hasAnyVehicle) {
+            console.log('📊 [Dashboard] ⚠️ Returning requiresProfileCompletion=true (no vehicles)');
+            return res.json({
+                success: true,
+                requiresProfileCompletion: true,
+                redirectUrl: '/complete-profile',
+                message: 'Please complete your profile and add vehicle details'
+            });
         }
         
-        // Check if documents are not uploaded
-        if (!user.documents?.driverLicense?.frontImage || !user.documents?.governmentId?.frontImage) {
-            req.flash('info', 'Please upload your verification documents');
-            return res.redirect('/user/upload-documents');
+        // Check if documents are not uploaded AND status is UNVERIFIED (not PENDING or VERIFIED)
+        const hasLicense = user.documents?.driverLicense?.frontImage;
+        const verificationPending = user.verificationStatus === 'PENDING' || 
+                                    user.verificationStatus === 'UNDER_REVIEW' ||
+                                    user.verificationStatus === 'VERIFIED';
+        
+        if (!hasLicense && !verificationPending) {
+            return res.json({
+                success: true,
+                requiresDocuments: true,
+                redirectUrl: '/user/documents',
+                message: 'Please upload your driving license for verification'
+            });
         }
     }
 
@@ -139,8 +185,8 @@ exports.showDashboard = asyncHandler(async (req, res) => {
     // Get carbon report using new method
     const carbonReport = await carbonCalculator.generateUserCarbonReport(user._id);
 
-    res.render('user/dashboard', {
-        title: 'Dashboard - LANE Carpool',
+    res.json({
+        success: true,
         user,
         upcomingTrips,
         stats,
@@ -153,13 +199,13 @@ exports.showDashboard = asyncHandler(async (req, res) => {
  */
 exports.showCompleteProfilePage = asyncHandler(async (req, res) => {
     if (req.user.role !== 'RIDER') {
-        return res.redirect('/user/dashboard');
+        return res.status(400).json({ success: false, message: 'Only riders need to complete profile', redirectUrl: '/dashboard' });
     }
 
-    res.render('user/complete-profile', {
-        title: 'Complete Your Profile - LANE Carpool',
-        user: req.user,
-        error: null
+    res.json({
+        success: true,
+        message: 'Complete profile page',
+        user: req.user
     });
 });
 
@@ -261,113 +307,44 @@ exports.completeProfile = asyncHandler(async (req, res) => {
  */
 exports.showUploadDocumentsPage = asyncHandler(async (req, res) => {
     if (req.user.role !== 'RIDER') {
-        return res.redirect('/user/dashboard');
+        return res.status(400).json({ success: false, message: 'Only riders can upload documents', redirectUrl: '/dashboard' });
     }
 
-    res.render('user/upload-documents', {
-        title: 'Upload Documents - LANE Carpool',
-        user: req.user,
-        error: null
+    res.json({
+        success: true,
+        message: 'Upload documents page',
+        user: req.user
     });
 });
 
 /**
- * Handle document upload
+ * Handle document upload (EJS legacy - redirects to new API handler)
+ * @deprecated Use POST /user/documents/upload for React frontend
  */
-exports.uploadDocuments = asyncHandler(async (req, res) => {
+exports.uploadDocumentsLegacy = asyncHandler(async (req, res) => {
+    // Redirect legacy calls to the new API or handle EJS form submission
+    if (req.accepts('json')) {
+        // Forward to modern handler
+        return exports.uploadDocumentsAPI(req, res);
+    }
+    
+    // Legacy EJS handling
     const user = await User.findById(req.user._id);
 
     if (user.role !== 'RIDER') {
-        req.flash('error', 'Only riders can upload documents');
+        if (req.flash) req.flash('error', 'Only riders can upload documents');
         return res.redirect('/user/dashboard');
     }
 
     if (!req.files || Object.keys(req.files).length === 0) {
-        req.flash('error', 'Please upload at least the required documents');
+        if (req.flash) req.flash('error', 'Please upload at least the required documents');
         return res.redirect('/user/upload-documents');
     }
 
-    // Check required documents
-    const requiredDocs = ['driverLicense', 'aadharCard', 'rcBook', 'insurance'];
-    const missingDocs = requiredDocs.filter(doc => !req.files[doc]);
+    // Process files and update user
+    await processDocumentUpload(user, req.files);
     
-    if (missingDocs.length > 0) {
-        req.flash('error', `Missing required documents: ${missingDocs.join(', ')}`);
-        return res.redirect('/user/upload-documents');
-    }
-
-    // Update documents (matching model structure)
-    if (req.files.driverLicense) {
-        user.documents.driverLicense = user.documents.driverLicense || {};
-        user.documents.driverLicense.frontImage = req.files.driverLicense[0].path;
-        user.documents.driverLicense.status = 'PENDING';
-    }
-    
-    if (req.files.aadharCard) {
-        user.documents.governmentId = user.documents.governmentId || {};
-        user.documents.governmentId.type = 'AADHAAR';
-        user.documents.governmentId.frontImage = req.files.aadharCard[0].path;
-        user.documents.governmentId.status = 'PENDING';
-    }
-    
-    if (req.files.rcBook) {
-        // Ensure vehicle exists in vehicles array
-        if (!user.vehicles || user.vehicles.length === 0) {
-            user.vehicles = [{}];
-        }
-        user.vehicles[0].registrationDocument = req.files.rcBook[0].path;
-        user.vehicles[0].status = 'PENDING';
-    }
-    
-    if (req.files.insurance) {
-        user.documents.insurance = user.documents.insurance || {};
-        user.documents.insurance.document = req.files.insurance[0].path;
-        user.documents.insurance.status = 'PENDING';
-    }
-    
-    // Handle multiple vehicle photos
-    if (req.files.vehiclePhotos) {
-        // Ensure vehicle exists in vehicles array
-        if (!user.vehicles || user.vehicles.length === 0) {
-            user.vehicles = [{}];
-        }
-        user.vehicles[0].photos = req.files.vehiclePhotos.map(file => file.path);
-    }
-
-    // Update verification status
-    user.verificationStatus = 'UNDER_REVIEW';
-    await user.save();
-
-    // Create notification for all admins
-    try {
-        const Notification = require('../models/Notification');
-        const User = require('../models/User');
-        
-        // Find all admin users
-        const admins = await User.find({ role: 'ADMIN' });
-        
-        // Create notification for each admin
-        const notificationPromises = admins.map(admin => 
-            Notification.create({
-                user: admin._id,
-                type: 'VERIFICATION_REQUEST',
-                title: 'New Driver Verification Request',
-                message: `${user.profile.firstName} ${user.profile.lastName} has submitted documents for verification`,
-                data: {
-                    userId: user._id,
-                    userName: `${user.profile.firstName} ${user.profile.lastName}`,
-                    verificationStatus: 'IN_REVIEW'
-                }
-            })
-        );
-        
-        await Promise.all(notificationPromises);
-    } catch (notificationError) {
-        console.error('Failed to create admin notification:', notificationError);
-        // Continue even if notification fails
-    }
-
-    req.flash('success', 'Documents uploaded successfully! Admin will verify within 24-48 hours.');
+    if (req.flash) req.flash('success', 'Documents uploaded successfully! Admin will verify within 24-48 hours.');
     res.redirect('/user/dashboard');
 });
 
@@ -386,8 +363,8 @@ exports.showProfile = asyncHandler(async (req, res) => {
     .sort({ createdAt: -1 })
     .limit(10);
 
-    res.render('user/profile', {
-        title: 'My Profile - LANE Carpool',
+    res.json({
+        success: true,
         user,
         reviews
     });
@@ -395,11 +372,41 @@ exports.showProfile = asyncHandler(async (req, res) => {
 
 /**
  * Get profile API (JSON response for frontend)
+ * ✅ RESPECTS: Profile visibility preferences
+ * ✅ CHECKS: Account suspension status
  */
 exports.getProfileAPI = asyncHandler(async (req, res) => {
     const user = await User.findById(req.user._id)
         .populate('emergencyContacts')
         .select('-password -resetPasswordToken -resetPasswordExpires');
+
+    if (!user) {
+        return res.status(404).json({
+            success: false,
+            message: 'User not found',
+            forceLogout: true
+        });
+    }
+    
+    // Check if account is suspended
+    if (user.accountStatus === 'SUSPENDED' || user.isSuspended) {
+        return res.status(403).json({
+            success: false,
+            message: `Your account has been suspended. Reason: ${user.suspensionReason || 'Policy violation'}. Please check your email for details.`,
+            accountSuspended: true,
+            forceLogout: true
+        });
+    }
+    
+    // Check if account is deleted
+    if (user.accountStatus === 'DELETED') {
+        return res.status(403).json({
+            success: false,
+            message: 'This account has been deleted.',
+            accountDeleted: true,
+            forceLogout: true
+        });
+    }
 
     // Get user's recent reviews
     const reviews = await Review.find({
@@ -412,6 +419,88 @@ exports.getProfileAPI = asyncHandler(async (req, res) => {
     res.status(200).json({
         success: true,
         user,
+        reviews
+    });
+});
+
+/**
+ * Get public profile of another user
+ * ✅ RESPECTS: Profile visibility preferences
+ */
+exports.getPublicProfile = asyncHandler(async (req, res) => {
+    const { userId } = req.params;
+    
+    const targetUser = await User.findById(userId)
+        .select('profile rating statistics verificationStatus createdAt preferences.privacy.profileVisibility preferences.rideComfort');
+
+    if (!targetUser) {
+        throw new AppError('User not found', 404);
+    }
+
+    // ✅ CHECK PROFILE VISIBILITY
+    const visibility = targetUser.preferences?.privacy?.profileVisibility || 'PUBLIC';
+    
+    if (visibility === 'PRIVATE') {
+        // Check if there's a confirmed booking between these users
+        const hasBookingRelation = await Booking.findOne({
+            $or: [
+                { passenger: req.user._id, rider: userId, status: { $in: ['CONFIRMED', 'COMPLETED'] } },
+                { passenger: userId, rider: req.user._id, status: { $in: ['CONFIRMED', 'COMPLETED'] } }
+            ]
+        });
+        
+        if (!hasBookingRelation) {
+            return res.status(200).json({
+                success: true,
+                user: {
+                    _id: targetUser._id,
+                    profile: {
+                        firstName: targetUser.profile?.firstName,
+                        photo: targetUser.profile?.photo
+                    },
+                    rating: targetUser.rating,
+                    verificationStatus: targetUser.verificationStatus,
+                    isPrivate: true,
+                    message: 'This profile is private'
+                }
+            });
+        }
+    }
+    
+    if (visibility === 'VERIFIED_ONLY' && req.user.verificationStatus !== 'VERIFIED') {
+        return res.status(200).json({
+            success: true,
+            user: {
+                _id: targetUser._id,
+                profile: {
+                    firstName: targetUser.profile?.firstName,
+                    photo: targetUser.profile?.photo
+                },
+                rating: targetUser.rating,
+                verificationStatus: targetUser.verificationStatus,
+                isRestricted: true,
+                message: 'This profile is only visible to verified users'
+            }
+        });
+    }
+
+    // Get user's recent reviews
+    const reviews = await Review.find({ reviewee: userId })
+        .populate('reviewer', 'profile.firstName profile.photo')
+        .sort({ createdAt: -1 })
+        .limit(5);
+
+    res.status(200).json({
+        success: true,
+        user: {
+            _id: targetUser._id,
+            profile: targetUser.profile,
+            rating: targetUser.rating,
+            statistics: targetUser.statistics,
+            verificationStatus: targetUser.verificationStatus,
+            createdAt: targetUser.createdAt,
+            rideComfort: targetUser.preferences?.rideComfort
+        },
         reviews
     });
 });
@@ -436,8 +525,10 @@ exports.getProfileData = asyncHandler(async (req, res) => {
  * Update profile with comprehensive validation and normalization
  */
 exports.updateProfile = asyncHandler(async (req, res) => {
+    console.log('📝 [Profile Update] Request:', { userId: req.user._id, body: req.body });
+    
     const user = await User.findById(req.user._id);
-    const { name, bio, preferences, profile, address, gender } = req.body;
+    const { name, bio, preferences, profile, address, gender, phone } = req.body;
 
     // ============================================
     // NORMALIZE AND VALIDATE INPUT DATA
@@ -451,7 +542,13 @@ exports.updateProfile = asyncHandler(async (req, res) => {
         user.name = name.trim();
     }
     
-    if (bio) {
+    // Update phone number
+    if (phone !== undefined) {
+        user.phone = phone.trim();
+        console.log('📱 [Profile Update] Phone updated to:', user.phone);
+    }
+    
+    if (bio !== undefined) {
         if (typeof bio !== 'string') {
             throw new AppError('❌ Invalid Bio: Bio must be a string.', 400);
         }
@@ -466,6 +563,13 @@ exports.updateProfile = asyncHandler(async (req, res) => {
     // ============================================
     if (profile) {
         let profileData = typeof profile === 'string' ? JSON.parse(profile) : profile;
+        
+        // Update the main name field if firstName/lastName are provided
+        if (profileData.firstName || profileData.lastName) {
+            const firstName = profileData.firstName || user.profile?.firstName || '';
+            const lastName = profileData.lastName || user.profile?.lastName || '';
+            user.name = `${firstName} ${lastName}`.trim();
+        }
         
         // Normalize gender to uppercase enum values
         if (profileData.gender) {
@@ -926,8 +1030,8 @@ exports.showTripHistory = asyncHandler(async (req, res) => {
 
     const pagination = helpers.paginate(totalTrips, page, limit);
 
-    res.render('user/trip-history', {
-        title: 'Trip History - LANE Carpool',
+    res.json({
+        success: true,
         user,
         trips,
         pagination
@@ -938,8 +1042,9 @@ exports.showTripHistory = asyncHandler(async (req, res) => {
  * Show notifications page
  */
 exports.showNotifications = asyncHandler(async (req, res) => {
-    res.render('user/notifications', {
-        title: 'Notifications - LANE Carpool',
+    res.json({
+        success: true,
+        message: 'Notifications page',
         user: req.user
     });
 });
@@ -948,30 +1053,133 @@ exports.showNotifications = asyncHandler(async (req, res) => {
  * Show settings page
  */
 exports.showSettings = (req, res) => {
-    res.render('user/settings', {
-        title: 'Settings - LANE Carpool',
+    res.json({
+        success: true,
+        message: 'Settings page',
         user: req.user
     });
 };
 
 /**
  * Update settings
+ * ✅ HANDLES ALL PREFERENCE SETTINGS
  */
 exports.updateSettings = asyncHandler(async (req, res) => {
     const user = await User.findById(req.user._id);
-    const { emailNotifications, smsNotifications, pushNotifications } = req.body;
+    const { 
+        // Notification Preferences
+        emailNotifications, 
+        pushNotifications,
+        rideAlerts,
+        // Privacy Settings
+        shareLocation,
+        profileVisibility,
+        showPhone,
+        showEmail,
+        // Security
+        twoFactorEnabled,
+        // Ride Comfort Preferences
+        musicPreference,
+        smokingAllowed,
+        petsAllowed,
+        conversationPreference,
+        // Booking Preferences
+        instantBooking,
+        verifiedUsersOnly,
+        maxDetourKm,
+        preferredCoRiderGender
+    } = req.body;
 
-    user.preferences.notifications = {
-        email: emailNotifications === 'true',
-        sms: smsNotifications === 'true',
-        push: pushNotifications === 'true'
-    };
+    // ✅ UPDATE NOTIFICATION PREFERENCES
+    if (!user.preferences) user.preferences = {};
+    if (!user.preferences.notifications) user.preferences.notifications = {};
+    
+    if (emailNotifications !== undefined) {
+        user.preferences.notifications.email = emailNotifications === 'true' || emailNotifications === true;
+    }
+    if (pushNotifications !== undefined) {
+        user.preferences.notifications.push = pushNotifications === 'true' || pushNotifications === true;
+    }
+    if (rideAlerts !== undefined) {
+        user.preferences.notifications.rideAlerts = rideAlerts === 'true' || rideAlerts === true;
+    }
+
+    // ✅ UPDATE PRIVACY SETTINGS
+    if (!user.preferences.privacy) user.preferences.privacy = {};
+    
+    if (shareLocation !== undefined) {
+        user.preferences.privacy.shareLocation = shareLocation === 'true' || shareLocation === true;
+    }
+    if (profileVisibility !== undefined) {
+        const validVisibilities = ['PUBLIC', 'VERIFIED_ONLY', 'PRIVATE'];
+        if (validVisibilities.includes(profileVisibility)) {
+            user.preferences.privacy.profileVisibility = profileVisibility;
+        }
+    }
+    if (showPhone !== undefined) {
+        user.preferences.privacy.showPhone = showPhone === 'true' || showPhone === true;
+    }
+    if (showEmail !== undefined) {
+        user.preferences.privacy.showEmail = showEmail === 'true' || showEmail === true;
+    }
+
+    // ✅ UPDATE SECURITY SETTINGS
+    if (!user.preferences.security) user.preferences.security = {};
+    
+    if (twoFactorEnabled !== undefined) {
+        user.preferences.security.twoFactorEnabled = twoFactorEnabled === 'true' || twoFactorEnabled === true;
+    }
+
+    // ✅ UPDATE RIDE COMFORT PREFERENCES
+    if (!user.preferences.rideComfort) user.preferences.rideComfort = {};
+    
+    if (musicPreference !== undefined) {
+        const validMusic = ['NO_MUSIC', 'SOFT_MUSIC', 'ANY_MUSIC', 'OPEN_TO_REQUESTS'];
+        if (validMusic.includes(musicPreference)) {
+            user.preferences.rideComfort.musicPreference = musicPreference;
+        }
+    }
+    if (smokingAllowed !== undefined) {
+        user.preferences.rideComfort.smokingAllowed = smokingAllowed === 'true' || smokingAllowed === true;
+    }
+    if (petsAllowed !== undefined) {
+        user.preferences.rideComfort.petsAllowed = petsAllowed === 'true' || petsAllowed === true;
+    }
+    if (conversationPreference !== undefined) {
+        const validConversation = ['QUIET', 'SOME_CHAT', 'CHATTY', 'DEPENDS_ON_MOOD'];
+        if (validConversation.includes(conversationPreference)) {
+            user.preferences.rideComfort.conversationPreference = conversationPreference;
+        }
+    }
+
+    // ✅ UPDATE BOOKING PREFERENCES
+    if (!user.preferences.booking) user.preferences.booking = {};
+    
+    if (instantBooking !== undefined) {
+        user.preferences.booking.instantBooking = instantBooking === 'true' || instantBooking === true;
+    }
+    if (verifiedUsersOnly !== undefined) {
+        user.preferences.booking.verifiedUsersOnly = verifiedUsersOnly === 'true' || verifiedUsersOnly === true;
+    }
+    if (maxDetourKm !== undefined) {
+        const detour = parseFloat(maxDetourKm);
+        if (!isNaN(detour) && detour >= 0 && detour <= 50) {
+            user.preferences.booking.maxDetourKm = detour;
+        }
+    }
+    if (preferredCoRiderGender !== undefined) {
+        const validGenders = ['ANY', 'MALE_ONLY', 'FEMALE_ONLY', 'SAME_GENDER'];
+        if (validGenders.includes(preferredCoRiderGender)) {
+            user.preferences.booking.preferredCoRiderGender = preferredCoRiderGender;
+        }
+    }
 
     await user.save();
 
     res.status(200).json({
         success: true,
-        message: 'Settings updated successfully'
+        message: 'Settings updated successfully',
+        preferences: user.preferences
     });
 });
 
@@ -1135,6 +1343,339 @@ exports.reactivateAccount = asyncHandler(async (req, res) => {
 });
 
 /**
+ * Update profile picture
+ */
+exports.updateProfilePicture = asyncHandler(async (req, res) => {
+    console.log('📸 [Profile Picture] Upload request:', {
+        userId: req.user._id,
+        files: req.files,
+        hasProfilePhoto: req.files?.profilePhoto ? 'yes' : 'no'
+    });
+
+    const user = await User.findById(req.user._id);
+
+    if (!req.files || !req.files.profilePhoto) {
+        console.log('❌ [Profile Picture] No file received');
+        throw new AppError('Please upload a profile photo', 400);
+    }
+
+    const photoPath = req.files.profilePhoto[0].path;
+    console.log('📸 [Profile Picture] File path:', photoPath);
+    
+    // Save to profile.photo (correct field in User model)
+    if (!user.profile) {
+        user.profile = {};
+    }
+    user.profile.photo = photoPath;
+    await user.save();
+
+    console.log('✅ [Profile Picture] Saved successfully:', user.profile.photo);
+
+    res.status(200).json({
+        success: true,
+        message: 'Profile picture updated successfully',
+        profilePhoto: user.profile.photo
+    });
+});
+
+/**
+ * Change password
+ */
+exports.changePassword = asyncHandler(async (req, res) => {
+    const { currentPassword, newPassword, confirmPassword } = req.body;
+
+    if (!currentPassword || !newPassword || !confirmPassword) {
+        throw new AppError('All password fields are required', 400);
+    }
+
+    if (newPassword !== confirmPassword) {
+        throw new AppError('New passwords do not match', 400);
+    }
+
+    if (newPassword.length < 6) {
+        throw new AppError('Password must be at least 6 characters long', 400);
+    }
+
+    const user = await User.findById(req.user._id).select('+password');
+
+    const isMatch = await user.comparePassword(currentPassword);
+    if (!isMatch) {
+        throw new AppError('Current password is incorrect', 400);
+    }
+
+    user.password = newPassword;
+    await user.save();
+
+    res.status(200).json({
+        success: true,
+        message: 'Password changed successfully'
+    });
+});
+
+/**
+ * Get carbon report
+ */
+exports.getCarbonReport = asyncHandler(async (req, res) => {
+    const user = req.user;
+    const report = await carbonCalculator.generateUserCarbonReport(user._id);
+
+    res.status(200).json({
+        success: true,
+        report: {
+            totalSaved: report.totalSaved || 0,
+            totalTrips: report.totalTrips || 0,
+            totalDistance: report.totalDistance || 0,
+            passengersHelped: report.passengersHelped || 0
+        }
+    });
+});
+
+/**
+ * Get emergency contacts list
+ */
+exports.getEmergencyContactsList = asyncHandler(async (req, res) => {
+    const user = await User.findById(req.user._id);
+    
+    res.status(200).json({
+        success: true,
+        contacts: user.emergencyContacts || []
+    });
+});
+
+/**
+ * Add emergency contact (new version for React frontend)
+ */
+exports.addEmergencyContactNew = asyncHandler(async (req, res) => {
+    const user = await User.findById(req.user._id);
+    const { name, phone, relationship, email, isPrimary } = req.body;
+
+    if (!name || !phone || !relationship) {
+        throw new AppError('Name, phone, and relationship are required', 400);
+    }
+
+    if (user.emergencyContacts && user.emergencyContacts.length >= 5) {
+        throw new AppError('Maximum 5 emergency contacts allowed', 400);
+    }
+
+    // If isPrimary, unset all other primary contacts
+    if (isPrimary && user.emergencyContacts) {
+        user.emergencyContacts.forEach(contact => {
+            contact.isPrimary = false;
+        });
+    }
+
+    const newContact = {
+        name,
+        phone,
+        relation: relationship,
+        email: email || '',
+        isPrimary: isPrimary || false,
+        verified: false
+    };
+
+    if (!user.emergencyContacts) {
+        user.emergencyContacts = [];
+    }
+
+    user.emergencyContacts.push(newContact);
+    await user.save();
+
+    // Get the newly added contact
+    const addedContact = user.emergencyContacts[user.emergencyContacts.length - 1];
+
+    res.status(200).json({
+        success: true,
+        message: 'Emergency contact added',
+        contact: addedContact
+    });
+});
+
+/**
+ * Send verification OTP to emergency contact
+ */
+exports.sendContactVerification = asyncHandler(async (req, res) => {
+    const user = await User.findById(req.user._id);
+    const { contactId } = req.params;
+
+    const contact = user.emergencyContacts.id(contactId);
+    if (!contact) {
+        throw new AppError('Contact not found', 404);
+    }
+
+    // Generate OTP
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    
+    // Store OTP (in production, use Redis or similar with expiry)
+    contact.verificationOtp = otp;
+    contact.verificationOtpExpiry = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
+    await user.save();
+
+    // Send OTP via SMS (mock for now)
+    console.log(`[DEBUG] Verification OTP for ${contact.phone}: ${otp}`);
+
+    // In production, use SMS service
+    // await smsService.send(contact.phone, `Your LANE verification code: ${otp}`);
+
+    res.status(200).json({
+        success: true,
+        message: 'Verification code sent'
+    });
+});
+
+/**
+ * Verify emergency contact with OTP
+ */
+exports.verifyEmergencyContact = asyncHandler(async (req, res) => {
+    const user = await User.findById(req.user._id);
+    const { contactId } = req.params;
+    const { otp } = req.body;
+
+    const contact = user.emergencyContacts.id(contactId);
+    if (!contact) {
+        throw new AppError('Contact not found', 404);
+    }
+
+    // Check OTP (in development, accept any 6-digit code)
+    if (process.env.NODE_ENV === 'development' || otp === contact.verificationOtp) {
+        contact.verified = true;
+        contact.verificationOtp = undefined;
+        contact.verificationOtpExpiry = undefined;
+        await user.save();
+
+        res.status(200).json({
+            success: true,
+            message: 'Contact verified successfully'
+        });
+    } else {
+        throw new AppError('Invalid verification code', 400);
+    }
+});
+
+/**
+ * Set primary emergency contact
+ */
+exports.setPrimaryContact = asyncHandler(async (req, res) => {
+    const user = await User.findById(req.user._id);
+    const { contactId } = req.params;
+
+    const contact = user.emergencyContacts.id(contactId);
+    if (!contact) {
+        throw new AppError('Contact not found', 404);
+    }
+
+    // Unset all other primary contacts
+    user.emergencyContacts.forEach(c => {
+        c.isPrimary = c._id.toString() === contactId;
+    });
+
+    await user.save();
+
+    res.status(200).json({
+        success: true,
+        message: 'Primary contact updated'
+    });
+});
+
+/**
+ * Upload driving license
+ */
+exports.uploadLicense = asyncHandler(async (req, res) => {
+    const user = await User.findById(req.user._id);
+
+    if (!req.files || (!req.files.licenseFront && !req.files.licenseBack)) {
+        throw new AppError('Please upload license images', 400);
+    }
+
+    if (!user.documents) {
+        user.documents = {};
+    }
+    if (!user.documents.driverLicense) {
+        user.documents.driverLicense = {};
+    }
+
+    if (req.files.licenseFront) {
+        user.documents.driverLicense.frontImage = req.files.licenseFront[0].path;
+    }
+    if (req.files.licenseBack) {
+        user.documents.driverLicense.backImage = req.files.licenseBack[0].path;
+    }
+
+    user.documents.driverLicense.status = 'PENDING';
+    user.verificationStatus = 'PENDING';
+    await user.save();
+
+    res.status(200).json({
+        success: true,
+        message: 'License uploaded successfully. Pending verification.',
+        status: 'PENDING'
+    });
+});
+
+/**
+ * Get license verification status
+ */
+exports.getLicenseStatus = asyncHandler(async (req, res) => {
+    const user = await User.findById(req.user._id);
+
+    const status = user.documents?.driverLicense?.status || 'NOT_UPLOADED';
+    const verificationStatus = user.verificationStatus || 'UNVERIFIED';
+
+    res.status(200).json({
+        success: true,
+        status,
+        verificationStatus,
+        hasLicense: !!user.documents?.driverLicense?.frontImage
+    });
+});
+
+/**
+ * Get user vehicles
+ */
+exports.getVehicles = asyncHandler(async (req, res) => {
+    const user = await User.findById(req.user._id);
+
+    res.status(200).json({
+        success: true,
+        vehicles: user.vehicles || []
+    });
+});
+
+/**
+ * Update vehicle
+ */
+exports.updateVehicle = asyncHandler(async (req, res) => {
+    const user = await User.findById(req.user._id);
+    const { vehicleId } = req.params;
+
+    const vehicle = user.vehicles.id(vehicleId);
+    if (!vehicle) {
+        throw new AppError('Vehicle not found', 404);
+    }
+
+    const { type, make, model, year, registrationNumber, color, seatingCapacity } = req.body;
+
+    if (type) vehicle.type = type.trim();
+    if (make) vehicle.make = make.trim();
+    if (model) vehicle.model = model.trim();
+    if (year) vehicle.year = parseInt(year);
+    if (registrationNumber) vehicle.registrationNumber = registrationNumber.trim().toUpperCase();
+    if (color) vehicle.color = color.trim();
+    if (seatingCapacity) vehicle.seatingCapacity = parseInt(seatingCapacity);
+
+    if (req.files && req.files.vehiclePhoto && req.files.vehiclePhoto.length > 0) {
+        vehicle.photos = req.files.vehiclePhoto.map(file => file.path);
+    }
+
+    await user.save();
+
+    res.status(200).json({
+        success: true,
+        message: 'Vehicle updated successfully',
+        vehicle
+    });
+});
+
+/**
  * Delete account (permanent)
  */
 exports.deleteAccount = asyncHandler(async (req, res) => {
@@ -1225,3 +1766,464 @@ exports.deleteAccount = asyncHandler(async (req, res) => {
         redirectUrl: '/'
     });
 });
+
+/**
+ * ✅ GET TRUST SCORE
+ * Calculate and return user's trust score with breakdown
+ */
+exports.getTrustScore = asyncHandler(async (req, res) => {
+    const userId = req.params.userId || req.user._id;
+    
+    const trustScore = await trustScoreCalculator.calculateTrustScore(userId);
+    
+    if (!trustScore) {
+        throw new AppError('User not found', 404);
+    }
+    
+    res.status(200).json({
+        success: true,
+        trustScore
+    });
+});
+
+/**
+ * ✅ GET USER BADGES
+ * Return all badges for a user
+ */
+exports.getUserBadges = asyncHandler(async (req, res) => {
+    const userId = req.params.userId || req.user._id;
+    
+    const user = await User.findById(userId).select('badges verificationStatus createdAt role rating statistics');
+    
+    if (!user) {
+        throw new AppError('User not found', 404);
+    }
+    
+    // Calculate earned badges based on current user state
+    const earnedBadges = [];
+    
+    // Add verification badges
+    if (user.verificationStatus === 'VERIFIED') {
+        earnedBadges.push('ID_VERIFIED');
+    }
+    
+    // Email/Phone verified (we'll assume verified if they registered)
+    earnedBadges.push('EMAIL_VERIFIED');
+    earnedBadges.push('PHONE_VERIFIED');
+    
+    // Profile badges
+    if (user.statistics?.completedRides >= 1) earnedBadges.push('FIRST_RIDE');
+    if (user.statistics?.completedRides >= 10) earnedBadges.push('FREQUENT_RIDER');
+    if (user.statistics?.carbonSaved >= 50) earnedBadges.push('ECO_WARRIOR');
+    if (user.rating?.overall >= 4.8 && user.rating?.totalRatings >= 10) earnedBadges.push('FIVE_STAR_DRIVER');
+    if (user.statistics?.completedRides >= 50 && user.rating?.overall >= 4.5) earnedBadges.push('SUPER_HOST');
+    
+    // Check if early adopter (within first year of platform launch)
+    const launchDate = new Date('2024-01-01'); // Adjust this
+    if (user.createdAt < new Date(launchDate.getTime() + 365 * 24 * 60 * 60 * 1000)) {
+        earnedBadges.push('EARLY_ADOPTER');
+    }
+    
+    // Get trust level
+    const trustScore = await trustScoreCalculator.calculateTrustScore(userId);
+    const trustLevel = trustScore?.level || 'NEWCOMER';
+    
+    // Available badges user can still earn
+    const allBadges = [
+        'EMAIL_VERIFIED', 'PHONE_VERIFIED', 'ID_VERIFIED', 'LICENSE_VERIFIED',
+        'PROFILE_COMPLETE', 'FIRST_RIDE', 'FIVE_STAR_DRIVER', 'FREQUENT_RIDER',
+        'ECO_WARRIOR', 'SUPER_HOST', 'EARLY_ADOPTER', 'COMMUNITY_HELPER'
+    ];
+    
+    const availableBadges = allBadges.filter(b => !earnedBadges.includes(b));
+    
+    // Format member since
+    const memberSince = user.createdAt.toLocaleDateString('en-IN', { 
+        year: 'numeric', 
+        month: 'long' 
+    });
+    
+    res.status(200).json({
+        success: true,
+        badges: {
+            earnedBadges,
+            availableBadges,
+            trustLevel,
+            memberSince,
+            totalBadges: earnedBadges.length
+        }
+    });
+});
+
+/**
+ * ✅ GET CONTRIBUTION CALCULATOR
+ * BlaBlaCar-style cost sharing calculator
+ */
+exports.getContributionCalculator = asyncHandler(async (req, res) => {
+    const { distanceKm, passengers = 1 } = req.query;
+    
+    if (!distanceKm) {
+        throw new AppError('Distance is required', 400);
+    }
+    
+    const distance = parseFloat(distanceKm);
+    const numPassengers = Math.max(1, parseInt(passengers) || 1);
+    
+    // Fair Cost calculation parameters (BlaBlaCar-style)
+    // Based on: Petrol ₹105/L ÷ 15 km/L mileage = ₹7/km fuel + ₹1/km maintenance = ₹8/km
+    const PETROL_PRICE = 105;           // ₹ per litre (current average in India)
+    const AVERAGE_MILEAGE = 15;         // km per litre (average car)
+    const MAINTENANCE_PER_KM = 1;       // ₹ for wear & tear
+    const RUNNING_COST_PER_KM = Math.round(PETROL_PRICE / AVERAGE_MILEAGE) + MAINTENANCE_PER_KM; // ≈ ₹8/km
+    
+    const totalTripCost = Math.round(distance * RUNNING_COST_PER_KM);
+    const fuelCostOnly = Math.round(distance * (PETROL_PRICE / AVERAGE_MILEAGE));
+    const maintenanceCost = Math.round(distance * MAINTENANCE_PER_KM);
+    
+    // Split between driver and passengers (BlaBlaCar model - driver shares the cost)
+    const totalPeople = numPassengers + 1; // passengers + driver
+    const suggestedPrice = Math.round(totalTripCost / totalPeople);
+    
+    // Calculate price range: Min 70%, Max 140% of suggested price
+    const minPrice = Math.round(suggestedPrice * 0.7);
+    const maxPrice = Math.round(suggestedPrice * 1.4);
+    
+    // Carbon savings calculation
+    const CO2_PER_KM_CAR = 0.12; // kg CO2 per km for average car
+    const carbonSaved = (distance * CO2_PER_KM_CAR * numPassengers).toFixed(2);
+    
+    res.status(200).json({
+        success: true,
+        calculation: {
+            distanceKm: distance,
+            passengers: numPassengers,
+            // Cost breakdown
+            petrolPrice: PETROL_PRICE,
+            averageMileage: AVERAGE_MILEAGE,
+            runningCostPerKm: RUNNING_COST_PER_KM,
+            fuelCostPerKm: Math.round(PETROL_PRICE / AVERAGE_MILEAGE),
+            maintenancePerKm: MAINTENANCE_PER_KM,
+            // Trip costs
+            fuelCost: fuelCostOnly,
+            maintenanceCost: maintenanceCost,
+            totalTripCost: totalTripCost,
+            // Per seat pricing
+            suggestedPrice,
+            priceRange: {
+                min: minPrice,
+                max: maxPrice
+            },
+            // Environmental impact
+            carbonSaved,
+            // Info
+            note: 'Fair cost-sharing: Petrol ₹105/L ÷ 15 km/L + ₹1 maintenance = ₹8/km. Split equally between driver and passengers.'
+        }
+    });
+});
+
+/**
+ * ✅ CHECK AND AWARD BADGES
+ * Check if user qualifies for any new badges
+ */
+exports.checkBadges = asyncHandler(async (req, res) => {
+    const awardedBadges = await trustScoreCalculator.checkAndAwardBadges(req.user._id);
+    
+    res.status(200).json({
+        success: true,
+        awardedBadges,
+        message: awardedBadges.length > 0 
+            ? `Congratulations! You earned ${awardedBadges.length} new badge(s)!` 
+            : 'No new badges at this time. Keep riding!'
+    });
+});
+
+/**
+ * ✅ GET RECOMMENDED PRICE
+ * Calculate recommended price for a ride based on distance
+ */
+exports.getRecommendedPrice = asyncHandler(async (req, res) => {
+    const { distanceKm, vehicleType } = req.query;
+    
+    if (!distanceKm) {
+        throw new AppError('Distance is required', 400);
+    }
+    
+    const pricing = trustScoreCalculator.calculateRecommendedPrice(
+        parseFloat(distanceKm),
+        vehicleType || 'SEDAN'
+    );
+    
+    res.status(200).json({
+        success: true,
+        pricing
+    });
+});
+
+/**
+ * ✅ GET USER STATISTICS
+ * Return detailed user statistics including trust score
+ */
+exports.getUserStats = asyncHandler(async (req, res) => {
+    const userId = req.params.userId || req.user._id;
+    
+    const user = await User.findById(userId).select(
+        'statistics rating trustScore badges cancellationRate responseMetrics createdAt'
+    );
+    
+    if (!user) {
+        throw new AppError('User not found', 404);
+    }
+    
+    // Calculate trust score if needed
+    let trustScore = user.trustScore;
+    if (!trustScore?.score || 
+        (Date.now() - new Date(trustScore?.lastCalculated).getTime()) > 24 * 60 * 60 * 1000) {
+        // Recalculate if older than 24 hours
+        trustScore = await trustScoreCalculator.calculateTrustScore(userId);
+    }
+    
+    res.status(200).json({
+        success: true,
+        stats: {
+            ...user.statistics?.toObject(),
+            rating: user.rating,
+            trustScore,
+            badges: user.badges?.length || 0,
+            cancellationRate: user.cancellationRate?.rate || 0,
+            averageResponseTime: user.responseMetrics?.averageResponseTime || 0,
+            quickResponder: user.responseMetrics?.quickResponder || false,
+            memberSince: user.createdAt
+        }
+    });
+});
+
+/**
+ * ✅ COMPLETE RIDER PROFILE
+ * Add vehicle, preferences, and license info for riders
+ */
+exports.completeRiderProfile = asyncHandler(async (req, res) => {
+    const user = req.user;
+    
+    if (user.role !== 'RIDER') {
+        throw new AppError('Only riders can complete this profile', 403);
+    }
+    
+    const { vehicle, preferences, license, bio } = req.body;
+    
+    // Validate required vehicle fields
+    if (!vehicle || !vehicle.make || !vehicle.model || !vehicle.licensePlate) {
+        throw new AppError('Vehicle make, model, and license plate are required', 400);
+    }
+    
+    // Check if license plate already exists for another user
+    const existingVehicle = await User.findOne({
+        _id: { $ne: user._id },
+        'vehicles.licensePlate': vehicle.licensePlate.toUpperCase()
+    });
+    
+    if (existingVehicle) {
+        throw new AppError('This license plate is already registered to another user', 400);
+    }
+    
+    // Create vehicle object
+    const vehicleData = {
+        vehicleType: vehicle.vehicleType || 'SEDAN',
+        make: vehicle.make,
+        model: vehicle.model,
+        year: vehicle.year || new Date().getFullYear(),
+        color: vehicle.color || 'Unknown',
+        licensePlate: vehicle.licensePlate.toUpperCase(),
+        seats: vehicle.seats || 4,
+        acAvailable: vehicle.acAvailable || false,
+        isDefault: true,
+        status: 'PENDING'
+    };
+    
+    // Update user
+    const updateData = {
+        $push: { vehicles: vehicleData }
+    };
+    
+    // Update preferences if provided
+    if (preferences) {
+        updateData['preferences.booking.preferredCoRiderGender'] = preferences.preferredCoRiderGender || 'ANY';
+        if (preferences.rideComfort) {
+            updateData['preferences.rideComfort'] = {
+                musicPreference: preferences.rideComfort.musicPreference || 'OPEN_TO_REQUESTS',
+                smokingAllowed: preferences.rideComfort.smokingAllowed || false,
+                petsAllowed: preferences.rideComfort.petsAllowed || false
+            };
+        }
+    }
+    
+    // Update license info if provided
+    if (license && license.number) {
+        updateData['documents.driverLicense.number'] = license.number;
+        updateData['documents.driverLicense.expiryDate'] = license.expiryDate;
+        updateData['documents.driverLicense.status'] = 'PENDING';
+    }
+    
+    // Update bio if provided
+    if (bio) {
+        updateData['profile.bio'] = bio;
+    }
+    
+    const updatedUser = await User.findByIdAndUpdate(
+        user._id,
+        updateData,
+        { new: true, runValidators: true }
+    );
+    
+    res.status(200).json({
+        success: true,
+        message: 'Profile completed successfully. Please upload your documents.',
+        redirectUrl: '/user/documents',
+        user: {
+            id: updatedUser._id,
+            vehicles: updatedUser.vehicles,
+            preferences: updatedUser.preferences
+        }
+    });
+});
+
+/**
+ * ✅ UPLOAD VERIFICATION DOCUMENTS
+ * Upload driver license, aadhar, RC, insurance, vehicle photos
+ */
+exports.uploadDocuments = asyncHandler(async (req, res) => {
+    const user = req.user;
+    
+    if (user.role !== 'RIDER') {
+        throw new AppError('Only riders can upload documents', 403);
+    }
+    
+    if (!req.files || Object.keys(req.files).length === 0) {
+        throw new AppError('No files uploaded', 400);
+    }
+    
+    const updateData = {};
+    
+    // Handle driver license front
+    if (req.files.driverLicenseFront) {
+        const file = req.files.driverLicenseFront[0];
+        updateData['documents.driverLicense.frontImage'] = file.path || file.filename;
+        updateData['documents.driverLicense.status'] = 'PENDING';
+    }
+    
+    // Handle driver license back
+    if (req.files.driverLicenseBack) {
+        const file = req.files.driverLicenseBack[0];
+        updateData['documents.driverLicense.backImage'] = file.path || file.filename;
+    }
+    
+    // Handle Aadhar card
+    if (req.files.aadharCard) {
+        const file = req.files.aadharCard[0];
+        updateData['documents.governmentId.type'] = 'AADHAAR';
+        updateData['documents.governmentId.frontImage'] = file.path || file.filename;
+        updateData['documents.governmentId.status'] = 'PENDING';
+    }
+    
+    // Handle RC Book (registration certificate)
+    if (req.files.rcBook) {
+        const file = req.files.rcBook[0];
+        // Store RC in first vehicle's registration document
+        if (user.vehicles && user.vehicles.length > 0) {
+            updateData['vehicles.0.registrationDocument'] = file.path || file.filename;
+            updateData['vehicles.0.status'] = 'PENDING';
+        }
+    }
+    
+    // Handle Insurance
+    if (req.files.insurance) {
+        const file = req.files.insurance[0];
+        updateData['documents.insurance.document'] = file.path || file.filename;
+        updateData['documents.insurance.status'] = 'PENDING';
+    }
+    
+    // Handle vehicle photos (multiple)
+    if (req.files.vehiclePhotos) {
+        const photoPaths = req.files.vehiclePhotos.map(f => f.path || f.filename);
+        if (user.vehicles && user.vehicles.length > 0) {
+            updateData['vehicles.0.photos'] = photoPaths;
+        }
+    }
+    
+    // Update verification status to PENDING
+    updateData['verificationStatus'] = 'PENDING';
+    
+    const updatedUser = await User.findByIdAndUpdate(
+        user._id,
+        updateData,
+        { new: true }
+    );
+    
+    res.status(200).json({
+        success: true,
+        message: 'Documents uploaded successfully. Verification in progress.',
+        verificationStatus: 'PENDING',
+        documentsUploaded: Object.keys(req.files)
+    });
+});
+
+/**
+ * ✅ GET DOCUMENT VERIFICATION STATUS
+ * Check status of all uploaded documents
+ */
+exports.getDocumentStatus = asyncHandler(async (req, res) => {
+    const user = await User.findById(req.user._id).select(
+        'documents vehicles verificationStatus'
+    );
+    
+    if (!user) {
+        throw new AppError('User not found', 404);
+    }
+    
+    const defaultVehicle = user.vehicles?.find(v => v.isDefault) || user.vehicles?.[0];
+    
+    res.status(200).json({
+        success: true,
+        overallStatus: user.verificationStatus,
+        documents: {
+            driverLicense: {
+                uploaded: !!user.documents?.driverLicense?.frontImage,
+                status: user.documents?.driverLicense?.status || 'NOT_UPLOADED',
+                hasBackImage: !!user.documents?.driverLicense?.backImage
+            },
+            governmentId: {
+                type: user.documents?.governmentId?.type || null,
+                uploaded: !!user.documents?.governmentId?.frontImage,
+                status: user.documents?.governmentId?.status || 'NOT_UPLOADED'
+            },
+            insurance: {
+                uploaded: !!user.documents?.insurance?.document,
+                status: user.documents?.insurance?.status || 'NOT_UPLOADED'
+            },
+            vehicle: {
+                hasRC: !!defaultVehicle?.registrationDocument,
+                hasPhotos: defaultVehicle?.photos?.length > 0,
+                photoCount: defaultVehicle?.photos?.length || 0,
+                status: defaultVehicle?.status || 'NOT_UPLOADED'
+            }
+        }
+    });
+});
+
+// ============================================
+// API FUNCTION ALIASES (for route compatibility)
+// ============================================
+
+// Alias for getDashboardData
+exports.getDashboardData = exports.showDashboard;
+
+// Alias for getProfile
+exports.getProfile = exports.getProfileAPI;
+
+// Alias for getTripHistory
+exports.getTripHistory = exports.showTripHistory;
+
+// Alias for getNotifications
+exports.getNotifications = exports.showNotifications;
+
+// Alias for getSettings
+exports.getSettings = exports.showSettings;

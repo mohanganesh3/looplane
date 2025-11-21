@@ -32,11 +32,20 @@ const LicenseUpload = () => {
   ];
 
   const licenseTypes = [
-    { value: 'LMV', label: 'LMV - Light Motor Vehicle' },
-    { value: 'MCWG', label: 'MCWG - Motorcycle with Gear' },
-    { value: 'MCWOG', label: 'MCWOG - Motorcycle without Gear' },
+    { value: 'MCWG', label: 'MCWG - Motorcycle with Gear (50cc+)' },
+    { value: 'MCWOG', label: 'MCWOG - Motorcycle without Gear (up to 50cc)' },
+    { value: 'LMV', label: 'LMV - Light Motor Vehicle (Car, Jeep, Taxi)' },
+    { value: 'LMV-NT', label: 'LMV-NT - Light Motor Vehicle Non-Transport' },
+    { value: 'LMV-TR', label: 'LMV-TR - Light Motor Vehicle Transport' },
+    { value: 'TRANS', label: 'TRANS - Transport Vehicle' },
     { value: 'HMV', label: 'HMV - Heavy Motor Vehicle' },
-    { value: 'TRANS', label: 'TRANS - Transport Vehicle' }
+    { value: 'HGMV', label: 'HGMV - Heavy Goods Motor Vehicle' },
+    { value: 'HPMV', label: 'HPMV - Heavy Passenger Motor Vehicle' },
+    { value: 'MGV', label: 'MGV - Medium Goods Vehicle' },
+    { value: 'HTV', label: 'HTV - Heavy Transport Vehicle' },
+    { value: 'INVCRG', label: 'INVCRG - Invalid Carriage' },
+    { value: 'RD', label: 'RD - Road Roller' },
+    { value: 'TRAC', label: 'TRAC - Tractor' }
   ];
 
   // Handle file selection
@@ -76,10 +85,15 @@ const LicenseUpload = () => {
 
   // Validate license number format
   const validateLicenseNumber = (number) => {
-    // Indian DL format: STATE CODE + RTO CODE + YEAR + NUMBER
-    // Example: KA01 20210012345
-    const pattern = /^[A-Z]{2}[0-9]{2}\s?[0-9]{4}[0-9]{7}$/;
-    return pattern.test(number.replace(/\s/g, ''));
+    // Indian DL formats (flexible validation):
+    // Old format: MH-12-2001-0012345 or MH12 20010012345
+    // New format: DL-0420110012345 or KA01 20210012345
+    // Minimum: 2 letters + some digits (at least 10 chars total)
+    const cleanNumber = number.replace(/[\s-]/g, '').toUpperCase();
+    
+    // Must start with 2 letters (state code), then have at least 8 more alphanumeric chars
+    const pattern = /^[A-Z]{2}[A-Z0-9]{8,}$/;
+    return cleanNumber.length >= 10 && cleanNumber.length <= 20 && pattern.test(cleanNumber);
   };
 
   // Handle step 1: Upload image
@@ -105,7 +119,7 @@ const LicenseUpload = () => {
 
     // Validate license number format
     if (!validateLicenseNumber(formData.licenseNumber)) {
-      setError('Invalid license number format. Example: KA01 20210012345');
+      setError('Invalid license number format. Examples: KA01 20210012345, MH-12-2001-0012345, DL0420110012345');
       return;
     }
 
@@ -121,13 +135,16 @@ const LicenseUpload = () => {
     try {
       // Create form data for upload
       const uploadData = new FormData();
-      uploadData.append('licenseImage', licenseImage);
+      uploadData.append('licenseFront', licenseImage); // Backend expects 'licenseFront'
       uploadData.append('licenseNumber', formData.licenseNumber.replace(/\s/g, ''));
       uploadData.append('licenseExpiry', formData.licenseExpiry);
       uploadData.append('licenseType', formData.licenseType);
       uploadData.append('licenseState', formData.licenseState);
 
       await userService.uploadLicense(uploadData);
+      
+      // Set flag to prevent redirect loop on dashboard
+      localStorage.setItem('licenseJustUploaded', 'true');
       
       // Refresh user data
       if (refreshUser) {
@@ -144,16 +161,16 @@ const LicenseUpload = () => {
 
   // Handle skip
   const handleSkip = () => {
-    navigate('/user/dashboard');
+    navigate('/dashboard');
   };
 
   // Handle completion
   const handleComplete = () => {
-    navigate('/user/dashboard');
+    navigate('/dashboard');
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 pt-20 pb-12">
+    <div className="min-h-screen bg-gray-50 pb-12">
       <div className="container mx-auto px-4 max-w-2xl">
         {/* Progress Steps */}
         <div className="mb-8">
@@ -308,11 +325,11 @@ const LicenseUpload = () => {
                       name="licenseNumber"
                       value={formData.licenseNumber}
                       onChange={handleInputChange}
-                      placeholder="e.g., KA01 20210012345"
-                      className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+                      placeholder="e.g., KA0120210012345 or MH-12-2001-0012345"
+                      className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent uppercase"
                     />
                     <p className="text-xs text-gray-500 mt-1">
-                      Enter as shown on your license
+                      Enter the license number exactly as shown on your license (with or without spaces/dashes)
                     </p>
                   </div>
 

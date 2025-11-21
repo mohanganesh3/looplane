@@ -7,3 +7,5 @@ export { default as CarbonReport } from './CarbonReport';
 export { default as EmergencyContacts } from './EmergencyContacts';
 export { default as Notifications } from './Notifications';
 export { default as Reviews } from './Reviews';
+export { default as CompleteProfile } from './CompleteProfile';
+export { default as DocumentUpload } from './DocumentUpload';
