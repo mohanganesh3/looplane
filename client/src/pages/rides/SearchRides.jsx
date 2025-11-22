@@ -1,20 +1,30 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useDispatch, useSelector } from 'react-redux';
 import { Button, Alert, Card, Badge, LoadingSpinner } from '../../components/common';
 import LocationInput from '../../components/common/LocationInput';
 import rideService from '../../services/rideService';
+import { getRating, formatRating } from '../../utils/helpers';
+import { setSearchResults, setFilters, clearSearchResults } from '../../redux/slices/ridesSlice';
+import { setGlobalLoading } from '../../redux/slices/uiSlice';
 
 const SearchRides = () => {
   const navigate = useNavigate();
+  const dispatch = useDispatch();
+  
+  // Get cached search results from Redux (for back navigation)
+  const cachedResults = useSelector((state) => state.rides.searchResults);
+  const cachedFilters = useSelector((state) => state.rides.filters);
+  
   const [searchParams, setSearchParams] = useState({
-    origin: null,
-    destination: null,
-    date: '',
-    seats: 1
+    origin: cachedFilters?.origin || null,
+    destination: cachedFilters?.destination || null,
+    date: cachedFilters?.date || '',
+    seats: cachedFilters?.seats || 1
   });
-  const [results, setResults] = useState([]);
+  const [results, setResults] = useState(cachedResults || []);
   const [loading, setLoading] = useState(false);
-  const [searched, setSearched] = useState(false);
+  const [searched, setSearched] = useState(cachedResults?.length > 0);
   const [error, setError] = useState('');
 
   const today = new Date().toISOString().split('T')[0];
@@ -30,15 +40,25 @@ const SearchRides = () => {
 
     setLoading(true);
     setSearched(true);
+    dispatch(setGlobalLoading(true));
+    
+    // Store search filters in Redux
+    dispatch(setFilters(searchParams));
 
     try {
       const data = await rideService.searchRides(searchParams);
-      setResults(data.rides || []);
+      const searchResults = data.rides || [];
+      setResults(searchResults);
+      
+      // Store results in Redux for caching
+      dispatch(setSearchResults(searchResults));
     } catch (err) {
       setError(err.message || 'Failed to search rides');
       setResults([]);
+      dispatch(clearSearchResults());
     } finally {
       setLoading(false);
+      dispatch(setGlobalLoading(false));
     }
   };
 
@@ -58,7 +78,7 @@ const SearchRides = () => {
   };
 
   return (
-    <div className="pt-20 pb-12 bg-gray-50 min-h-screen">
+    <div className="pb-12 bg-gray-50 min-h-screen">
       <div className="container mx-auto px-4">
         {/* Search Header */}
         <div className="bg-white rounded-2xl shadow-lg p-8 mb-8">
@@ -155,18 +175,41 @@ const SearchRides = () => {
               <p className="text-gray-600 mb-4">
                 Found <span className="font-semibold">{results.length}</span> ride(s)
               </p>
-              {results.map((ride) => (
-                <Card key={ride._id} hover className="cursor-pointer" onClick={() => navigate(`/rides/${ride._id}`)}>
+              {results.map((result) => {
+                // Handle both formats: result with nested ride or direct ride object
+                const ride = result.ride || result;
+                const rideId = ride._id;
+                const riderName = result.riderDisplayName || ride.rider?.name || ride.rider?.profile?.firstName || 'Driver';
+                const pricePerSeat = ride.pricing?.pricePerSeat || ride.pricePerSeat || 0;
+                const availableSeats = ride.pricing?.availableSeats || ride.availableSeats || 0;
+                const departureTime = ride.schedule?.departureDateTime || ride.departureTime;
+                const originCity = ride.route?.start?.address || ride.origin?.city || 'Origin';
+                const destCity = ride.route?.destination?.address || ride.destination?.city || 'Destination';
+                const riderRating = getRating(ride.rider?.rating);
+                const handleViewDetails = (e) => {
+                  e.stopPropagation(); // Prevent card click
+                  // Pass the searched pickup/dropoff locations to the ride details page
+                  navigate(`/rides/${rideId}`, {
+                    state: {
+                      searchedPickup: searchParams.origin,
+                      searchedDropoff: searchParams.destination,
+                      searchedSeats: searchParams.seats
+                    }
+                  });
+                };
+                
+                return (
+                <Card key={rideId} hover className="cursor-pointer" onClick={handleViewDetails}>
                   <div className="flex flex-col md:flex-row md:items-center md:justify-between">
                     <div className="flex-1">
                       {/* Route */}
                       <div className="flex items-center space-x-3 mb-3">
                         <div>
                           <div className="text-lg font-bold text-gray-800">
-                            {ride.origin?.city || 'Origin'}
+                            {originCity.split(',')[0]}
                           </div>
                           <div className="text-xs text-gray-500">
-                            {formatTime(ride.departureTime)}
+                            {formatTime(departureTime)}
                           </div>
                         </div>
                         <div className="flex-1 flex items-center px-4">
@@ -176,10 +219,10 @@ const SearchRides = () => {
                         </div>
                         <div className="text-right">
                           <div className="text-lg font-bold text-gray-800">
-                            {ride.destination?.city || 'Destination'}
+                            {destCity.split(',')[0]}
                           </div>
                           <div className="text-xs text-gray-500">
-                            {ride.estimatedDuration || '~'}
+                            {result.matchQuality || '~'}
                           </div>
                         </div>
                       </div>
@@ -188,20 +231,26 @@ const SearchRides = () => {
                       <div className="flex flex-wrap items-center gap-4 text-sm text-gray-600">
                         <span>
                           <i className="fas fa-calendar mr-1"></i>
-                          {formatDate(ride.departureTime)}
+                          {formatDate(departureTime)}
                         </span>
                         <span>
                           <i className="fas fa-user-circle mr-1"></i>
-                          {ride.rider?.name || 'Driver'}
+                          {riderName}
                         </span>
                         <span>
                           <i className="fas fa-chair mr-1"></i>
-                          {ride.availableSeats} seat(s) left
+                          {availableSeats} seat(s) left
                         </span>
-                        {ride.rider?.rating && (
+                        {riderRating > 0 && (
                           <span className="flex items-center">
                             <i className="fas fa-star text-yellow-400 mr-1"></i>
-                            {ride.rider.rating.toFixed(1)}
+                            {riderRating.toFixed(1)}
+                          </span>
+                        )}
+                        {result.carbonSaved > 0 && (
+                          <span className="flex items-center text-green-600">
+                            <i className="fas fa-leaf mr-1"></i>
+                            {result.carbonSaved.toFixed(1)} kg CO₂
                           </span>
                         )}
                       </div>
@@ -210,27 +259,31 @@ const SearchRides = () => {
                     {/* Price & Action */}
                     <div className="mt-4 md:mt-0 md:ml-6 flex flex-col items-end">
                       <div className="text-2xl font-bold text-emerald-500 mb-2">
-                        ₹{ride.pricePerSeat}
+                        ₹{pricePerSeat}
                         <span className="text-sm text-gray-500 font-normal">/seat</span>
                       </div>
-                      <Button variant="primary" size="sm">
+                      <Button variant="primary" size="sm" onClick={handleViewDetails}>
                         View Details
                       </Button>
                     </div>
                   </div>
 
-                  {/* Amenities */}
-                  {ride.amenities && ride.amenities.length > 0 && (
+                  {/* Match Quality Badge */}
+                  {result.matchQuality && (
                     <div className="mt-4 pt-4 border-t border-gray-100 flex flex-wrap gap-2">
-                      {ride.amenities.map((amenity, index) => (
-                        <Badge key={index} variant="default" size="sm">
-                          {amenity}
+                      <Badge variant={result.matchQuality === 'EXCELLENT' || result.matchQuality === 'Excellent' ? 'success' : result.matchQuality === 'GOOD' || result.matchQuality === 'Good' ? 'info' : 'default'} size="sm">
+                        {result.matchQuality} Match
+                      </Badge>
+                      {result.distance && (
+                        <Badge variant="default" size="sm">
+                          {result.distance.toFixed(1)} km
                         </Badge>
-                      ))}
+                      )}
                     </div>
                   )}
                 </Card>
-              ))}
+              );
+              })}
             </div>
           )
         ) : null}
