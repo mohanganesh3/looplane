@@ -1,7 +1,7 @@
 /**
  * Route Matching Utility
- * Advanced algorithm for matching passenger routes with rider routes
- * Uses OSRM for routing and calculations for proximity matching
+ * Simple and correct algorithm for matching passenger routes with rider routes
+ * Uses polyline geometry matching - checks if pickup/dropoff are ON the driver's route
  */
 
 const axios = require('axios');
@@ -10,93 +10,54 @@ const helpers = require('./helpers');
 class RouteMatching {
     constructor() {
         this.OSRM_URL = process.env.OSRM_API_URL || 'https://router.project-osrm.org';
-        this.DEVIATION_THRESHOLD = parseFloat(process.env.ROUTE_DEVIATION_THRESHOLD) || 10; // km for intermediate points (increased for highways)
-        this.ENDPOINT_THRESHOLD = parseFloat(process.env.ROUTE_ENDPOINT_THRESHOLD) || 20; // km tolerance for start/end matching
-        this.MAX_DETOUR_PERCENT = 20; // Maximum 20% detour allowed
-        this.EXACT_MATCH_EPSILON = 0.5; // km - for detecting exact waypoint matches
+        // How far from the route polyline a point can be and still be considered "on route"
+        this.ROUTE_PROXIMITY_THRESHOLD = 5; // 5 km from route line
         
-        console.log('🔧 [RouteMatching] Initialized with thresholds:');
-        console.log(`   DEVIATION_THRESHOLD: ${this.DEVIATION_THRESHOLD} km`);
-        console.log(`   ENDPOINT_THRESHOLD: ${this.ENDPOINT_THRESHOLD} km`);
-        console.log(`   EXACT_MATCH_EPSILON: ${this.EXACT_MATCH_EPSILON} km`);
+        console.log('🔧 [RouteMatching] Initialized');
+        console.log(`   ROUTE_PROXIMITY_THRESHOLD: ${this.ROUTE_PROXIMITY_THRESHOLD} km`);
     }
 
     /**
-     * Check if a point is near a route line
+     * Check if a point is near a route polyline
      * @param {Array} point - [lon, lat]
-     * @param {Array} routeCoordinates - Array of [lon, lat] points
+     * @param {Array} routeCoordinates - Array of [lon, lat] points (polyline)
      * @param {number} threshold - Distance threshold in km
-     * @returns {object} Match result
+     * @returns {object} Match result with closest point info
      */
-    isPointNearRoute(point, routeCoordinates, threshold = this.DEVIATION_THRESHOLD) {
-        // First, check for exact/near matches at waypoints (prioritize exact coordinate matches)
-        for (let i = 0; i < routeCoordinates.length; i++) {
-            const [lon, lat] = routeCoordinates[i];
-            const dist = helpers.calculateDistance(
-                point[1], point[0],
-                lat, lon
-            );
-            
-            // If point is very close to a waypoint (within 500m), return it immediately
-            if (dist < this.EXACT_MATCH_EPSILON) {
-                return {
-                    isNear: true,
-                    distance: dist,
-                    closestIndex: i,
-                    closestPoint: routeCoordinates[i],
-                    isExactMatch: true
-                };
-            }
-        }
-
+    isPointOnRoute(point, routeCoordinates, threshold = this.ROUTE_PROXIMITY_THRESHOLD) {
         let minDistance = Infinity;
         let closestIndex = -1;
         let closestPoint = null;
 
-        // Check distance to each segment of the route
+        // Check distance to each segment of the route polyline
         for (let i = 0; i < routeCoordinates.length - 1; i++) {
             const segmentStart = routeCoordinates[i];
             const segmentEnd = routeCoordinates[i + 1];
             
-            const distance = this.pointToSegmentDistance(
-                point,
-                segmentStart,
-                segmentEnd
+            // Find closest point on this segment
+            const closest = this.closestPointOnSegment(point, segmentStart, segmentEnd);
+            const distance = helpers.calculateDistance(
+                point[1], point[0],
+                closest[1], closest[0]
             );
             
             if (distance < minDistance) {
                 minDistance = distance;
                 closestIndex = i;
-                closestPoint = this.closestPointOnSegment(point, segmentStart, segmentEnd);
+                closestPoint = closest;
             }
         }
 
         return {
-            isNear: minDistance <= threshold,
+            isOnRoute: minDistance <= threshold,
             distance: minDistance,
             closestIndex: closestIndex,
-            closestPoint: closestPoint,
-            isExactMatch: false
+            closestPoint: closestPoint
         };
     }
 
     /**
-     * Calculate distance from point to line segment
-     * @param {Array} point - [lon, lat]
-     * @param {Array} segmentStart - [lon, lat]
-     * @param {Array} segmentEnd - [lon, lat]
-     * @returns {number} Distance in km
-     */
-    pointToSegmentDistance(point, segmentStart, segmentEnd) {
-        const closestPoint = this.closestPointOnSegment(point, segmentStart, segmentEnd);
-        return helpers.calculateDistance(
-            point[1], point[0],
-            closestPoint[1], closestPoint[0]
-        );
-    }
-
-    /**
-     * Find closest point on line segment to given point
+     * Find closest point on a line segment to a given point
      * @param {Array} point - [lon, lat]
      * @param {Array} segmentStart - [lon, lat]
      * @param {Array} segmentEnd - [lon, lat]
@@ -114,6 +75,7 @@ class RouteMatching {
             return segmentStart;
         }
 
+        // Project point onto line, clamped to segment
         const t = Math.max(0, Math.min(1, 
             ((px - x1) * dx + (py - y1) * dy) / (dx * dx + dy * dy)
         ));
@@ -122,258 +84,105 @@ class RouteMatching {
     }
 
     /**
-     * Match simple route (2 points) with passenger route
-     * Uses proximity matching instead of exact route matching
+     * Main matching function - check if passenger route matches driver's route
+     * 
+     * Logic:
+     * 1. Is passenger pickup ON the driver's route polyline? (within threshold)
+     * 2. Is passenger dropoff ON the driver's route polyline? (within threshold)
+     * 3. Does dropoff come AFTER pickup along the route? (same direction)
+     * 
      * @param {object} passengerRoute - { pickup: [lon, lat], dropoff: [lon, lat] }
      * @param {object} rideRoute - { geometry: { coordinates: [[lon, lat]...] }, distance: km }
      * @returns {object} Match result
-     */
-    matchSimpleRoute(passengerRoute, rideRoute) {
-        const { pickup, dropoff } = passengerRoute;
-        const [rideStart, rideEnd] = rideRoute.geometry.coordinates;
-
-        console.log('Simple route matching:');
-        console.log('  Passenger pickup:', pickup);
-        console.log('  Passenger dropoff:', dropoff);
-        console.log('  Ride start:', rideStart);
-        console.log('  Ride end:', rideEnd);
-
-        // Calculate distances
-        const pickupToStart = helpers.calculateDistance(
-            pickup[1], pickup[0],
-            rideStart[1], rideStart[0]
-        );
-        const dropoffToEnd = helpers.calculateDistance(
-            dropoff[1], dropoff[0],
-            rideEnd[1], rideEnd[0]
-        );
-
-        console.log('  Pickup to start distance:', pickupToStart, 'km');
-        console.log('  Dropoff to end distance:', dropoffToEnd, 'km');
-
-        // More lenient threshold for simple routes (20km)
-        const SIMPLE_ROUTE_THRESHOLD = 20;
-
-        // Check if pickup is near ride start and dropoff is near ride end
-        if (pickupToStart > SIMPLE_ROUTE_THRESHOLD || dropoffToEnd > SIMPLE_ROUTE_THRESHOLD) {
-            console.log('  ❌ FAILED: Endpoints too far apart');
-            return {
-                isMatch: false,
-                reason: 'Route endpoints too far apart',
-                pickupDistance: pickupToStart,
-                dropoffDistance: dropoffToEnd
-            };
-        }
-
-        // Calculate direct distance for passenger and ride
-        const passengerDistance = helpers.calculateDistance(
-            pickup[1], pickup[0],
-            dropoff[1], dropoff[0]
-        );
-
-        const rideDistance = helpers.calculateDistance(
-            rideStart[1], rideStart[0],
-            rideEnd[1], rideEnd[0]
-        );
-
-        // Calculate similarity (distances should be similar)
-        const distanceDiff = Math.abs(passengerDistance - rideDistance);
-        const distanceSimilarity = 1 - (distanceDiff / Math.max(passengerDistance, rideDistance));
-
-        // Require at least 70% similarity
-        if (distanceSimilarity < 0.7) {
-            return {
-                isMatch: false,
-                reason: 'Routes too dissimilar',
-                similarity: distanceSimilarity
-            };
-        }
-
-        // Calculate match score
-        const proximityScore = 100 - (pickupToStart / SIMPLE_ROUTE_THRESHOLD) * 30 - (dropoffToEnd / SIMPLE_ROUTE_THRESHOLD) * 30;
-        const similarityScore = distanceSimilarity * 40;
-        const matchScore = Math.round(proximityScore + similarityScore);
-
-        return {
-            isMatch: true,
-            matchScore: Math.max(0, Math.min(100, matchScore)),
-            matchQuality: this.getMatchQuality(matchScore),
-            pickupPoint: {
-                coordinates: rideStart,
-                distanceFromRoute: pickupToStart,
-                routeIndex: 0
-            },
-            dropoffPoint: {
-                coordinates: rideEnd,
-                distanceFromRoute: dropoffToEnd,
-                routeIndex: 1
-            },
-            segmentDistance: rideDistance,
-            directDistance: passengerDistance,
-            detourPercent: 0
-        };
-    }
-
-    /**
-     * Match passenger route (C→D) with rider route (A→B)
-     * @param {object} passengerRoute - { pickup: [lon, lat], dropoff: [lon, lat] }
-     * @param {object} rideRoute - { geometry: { coordinates: [[lon, lat]...] }, distance: km }
-     * @returns {object} Match result
-```
      */
     matchRoutes(passengerRoute, rideRoute) {
         const { pickup, dropoff } = passengerRoute;
-        const { coordinates: routeCoords } = rideRoute.geometry;
+        const routeCoords = rideRoute.geometry?.coordinates;
 
-        // Validate route has sufficient data
+        // Validate route has geometry
         if (!routeCoords || routeCoords.length < 2) {
             return {
                 isMatch: false,
-                reason: 'Invalid route geometry (insufficient coordinates)'
+                reason: 'Invalid route geometry'
             };
         }
 
-        // For routes with only 2 points AND short distance, use proximity-based matching
-        // This should be rare since OSRM provides detailed geometry
-        const directDist = helpers.calculateDistance(
-            routeCoords[0][1], routeCoords[0][0],
-            routeCoords[routeCoords.length - 1][1], routeCoords[routeCoords.length - 1][0]
-        );
+        console.log(`    Checking ${routeCoords.length} polyline points...`);
+
+        // Step 1: Check if PICKUP is on the route
+        const pickupResult = this.isPointOnRoute(pickup, routeCoords);
+        console.log(`    Pickup: ${pickupResult.isOnRoute ? '✅ ON ROUTE' : '❌ OFF ROUTE'} (${pickupResult.distance.toFixed(2)}km from route, threshold: ${this.ROUTE_PROXIMITY_THRESHOLD}km)`);
         
-        if (routeCoords.length === 2 && directDist < 50) {
-            // Only use simple matching for very short routes (< 50km)
-            return this.matchSimpleRoute(passengerRoute, rideRoute);
-        }
-
-        const rideStart = routeCoords[0];
-        const rideEnd = routeCoords[routeCoords.length - 1];
-
-        // Check if pickup point is near the route
-        console.log('🔍 [Match Debug] Checking pickup point...');
-        let pickupMatch = this.isPointNearRoute(pickup, routeCoords);
-        console.log(`  Pickup near route? ${pickupMatch.isNear}, distance: ${pickupMatch.distance?.toFixed(2)} km, threshold: ${this.DEVIATION_THRESHOLD} km`);
-
-        if (!pickupMatch.isNear) {
-            const pickupToStart = helpers.calculateDistance(pickup[1], pickup[0], rideStart[1], rideStart[0]);
-            const pickupToEnd = helpers.calculateDistance(pickup[1], pickup[0], rideEnd[1], rideEnd[0]);
-
-            if (pickupToStart <= this.ENDPOINT_THRESHOLD) {
-                pickupMatch = {
-                    isNear: true,
-                    distance: pickupToStart,
-                    closestIndex: 0,
-                    closestPoint: rideStart
-                };
-            } else if (pickupToEnd <= this.ENDPOINT_THRESHOLD) {
-                pickupMatch = {
-                    isNear: true,
-                    distance: pickupToEnd,
-                    closestIndex: routeCoords.length - 1,
-                    closestPoint: rideEnd
-                };
-            } else {
-                return {
-                    isMatch: false,
-                    reason: 'Pickup location not on route',
-                    pickupDistance: Math.min(pickupMatch.distance, pickupToStart, pickupToEnd)
-                };
-            }
-        }
-
-        // Check if dropoff point is near the route
-        let dropoffMatch = this.isPointNearRoute(dropoff, routeCoords);
-
-        if (!dropoffMatch.isNear) {
-            const dropoffToStart = helpers.calculateDistance(dropoff[1], dropoff[0], rideStart[1], rideStart[0]);
-            const dropoffToEnd = helpers.calculateDistance(dropoff[1], dropoff[0], rideEnd[1], rideEnd[0]);
-
-            if (dropoffToEnd <= this.ENDPOINT_THRESHOLD) {
-                dropoffMatch = {
-                    isNear: true,
-                    distance: dropoffToEnd,
-                    closestIndex: routeCoords.length - 1,
-                    closestPoint: rideEnd
-                };
-            } else if (dropoffToStart <= this.ENDPOINT_THRESHOLD) {
-                dropoffMatch = {
-                    isNear: true,
-                    distance: dropoffToStart,
-                    closestIndex: 0,
-                    closestPoint: rideStart
-                };
-            } else {
-                return {
-                    isMatch: false,
-                    reason: 'Dropoff location not on route',
-                    dropoffDistance: Math.min(dropoffMatch.distance, dropoffToStart, dropoffToEnd)
-                };
-            }
-        }
-
-        // Check if dropoff comes after pickup on the route
-        if (dropoffMatch.closestIndex <= pickupMatch.closestIndex) {
+        if (!pickupResult.isOnRoute) {
             return {
                 isMatch: false,
-                reason: 'Dropoff comes before pickup on route',
-                pickupIndex: pickupMatch.closestIndex,
-                dropoffIndex: dropoffMatch.closestIndex
+                reason: `Pickup is ${pickupResult.distance.toFixed(1)}km from route (max ${this.ROUTE_PROXIMITY_THRESHOLD}km)`
+            };
+        }
+
+        // Step 2: Check if DROPOFF is on the route
+        const dropoffResult = this.isPointOnRoute(dropoff, routeCoords);
+        console.log(`    Dropoff: ${dropoffResult.isOnRoute ? '✅ ON ROUTE' : '❌ OFF ROUTE'} (${dropoffResult.distance.toFixed(2)}km from route, threshold: ${this.ROUTE_PROXIMITY_THRESHOLD}km)`);
+        
+        if (!dropoffResult.isOnRoute) {
+            return {
+                isMatch: false,
+                reason: `Dropoff is ${dropoffResult.distance.toFixed(1)}km from route (max ${this.ROUTE_PROXIMITY_THRESHOLD}km)`
+            };
+        }
+
+        // Step 3: Check direction - dropoff must come AFTER pickup along the route
+        if (dropoffResult.closestIndex <= pickupResult.closestIndex) {
+            return {
+                isMatch: false,
+                reason: 'Wrong direction - dropoff is before pickup on route'
             };
         }
 
         // Calculate segment distance (pickup to dropoff along route)
         const segmentDistance = this.calculateRouteSegmentDistance(
             routeCoords,
-            pickupMatch.closestIndex,
-            dropoffMatch.closestIndex
+            pickupResult.closestIndex,
+            dropoffResult.closestIndex
         );
 
-        // Calculate direct distance
+        // Calculate direct distance (straight line)
         const directDistance = helpers.calculateDistance(
             pickup[1], pickup[0],
             dropoff[1], dropoff[0]
         );
 
-        // Calculate detour percentage
-        const detourPercent = ((segmentDistance - directDistance) / directDistance) * 100;
-
-        // Calculate match score (0-100)
-        const matchScore = this.calculateMatchScore({
-            pickupDistance: Math.min(pickupMatch.distance, this.DEVIATION_THRESHOLD),
-            dropoffDistance: Math.min(dropoffMatch.distance, this.DEVIATION_THRESHOLD),
-            detourPercent: detourPercent
-        });
+        // Calculate match score based on how close points are to the route
+        const pickupScore = Math.max(0, 50 - (pickupResult.distance / this.ROUTE_PROXIMITY_THRESHOLD) * 50);
+        const dropoffScore = Math.max(0, 50 - (dropoffResult.distance / this.ROUTE_PROXIMITY_THRESHOLD) * 50);
+        const matchScore = Math.round(pickupScore + dropoffScore);
 
         return {
             isMatch: true,
-            matchScore: matchScore,
+            matchScore: Math.max(50, matchScore), // Minimum 50 for any valid match
             matchQuality: this.getMatchQuality(matchScore),
             pickupPoint: {
-                coordinates: pickupMatch.closestPoint,
-                distanceFromRoute: pickupMatch.distance,
-                routeIndex: pickupMatch.closestIndex
+                coordinates: pickupResult.closestPoint,
+                distanceFromRoute: pickupResult.distance,
+                routeIndex: pickupResult.closestIndex
             },
             dropoffPoint: {
-                coordinates: dropoffMatch.closestPoint,
-                distanceFromRoute: dropoffMatch.distance,
-                routeIndex: dropoffMatch.closestIndex
+                coordinates: dropoffResult.closestPoint,
+                distanceFromRoute: dropoffResult.distance,
+                routeIndex: dropoffResult.closestIndex
             },
             segmentDistance: segmentDistance,
-            directDistance: directDistance,
-            detourPercent: Math.round(detourPercent * 100) / 100
+            directDistance: directDistance
         };
     }
 
     /**
      * Calculate distance along route between two indices
-     * @param {Array} coordinates - Route coordinates
-     * @param {number} startIndex - Start index
-     * @param {number} endIndex - End index
-     * @returns {number} Distance in km
      */
     calculateRouteSegmentDistance(coordinates, startIndex, endIndex) {
         let distance = 0;
         
-        for (let i = startIndex; i < endIndex; i++) {
+        for (let i = startIndex; i < endIndex && i < coordinates.length - 1; i++) {
             const [lon1, lat1] = coordinates[i];
             const [lon2, lat2] = coordinates[i + 1];
             distance += helpers.calculateDistance(lat1, lon1, lat2, lon2);
@@ -383,30 +192,7 @@ class RouteMatching {
     }
 
     /**
-     * Calculate match score based on various factors
-     * @param {object} params - Match parameters
-     * @returns {number} Score (0-100)
-     */
-    calculateMatchScore({ pickupDistance, dropoffDistance, detourPercent }) {
-        let score = 100;
-
-        // Deduct points based on pickup distance from route
-        score -= (pickupDistance / this.DEVIATION_THRESHOLD) * 20;
-
-        // Deduct points based on dropoff distance from route
-        score -= (dropoffDistance / this.DEVIATION_THRESHOLD) * 20;
-
-        // Deduct points based on detour percentage
-        score -= (detourPercent / this.MAX_DETOUR_PERCENT) * 40;
-
-        // Ensure score is between 0 and 100
-        return Math.max(0, Math.min(100, Math.round(score)));
-    }
-
-    /**
      * Get match quality label
-     * @param {number} score - Match score
-     * @returns {string} Quality label
      */
     getMatchQuality(score) {
         if (score >= 90) return 'PERFECT';
@@ -418,45 +204,51 @@ class RouteMatching {
 
     /**
      * Find all matching rides for a passenger route
-     * @param {object} passengerRoute - Passenger route details
-     * @param {Array} availableRides - Array of available rides
-     * @param {number} maxResults - Maximum results to return
-     * @returns {Array} Matched rides sorted by score
      */
     findMatchingRides(passengerRoute, availableRides, maxResults = 20) {
         const matches = [];
 
+        console.log('🔍 [findMatchingRides] Starting polyline matching for', availableRides.length, 'rides');
+        console.log('  Passenger pickup:', passengerRoute.pickup);
+        console.log('  Passenger dropoff:', passengerRoute.dropoff);
+
         for (const ride of availableRides) {
             // Skip if ride doesn't have route geometry
-            if (!ride.route || !ride.route.geometry || !ride.route.geometry.coordinates) {
+            if (!ride.route?.geometry?.coordinates || ride.route.geometry.coordinates.length < 2) {
+                console.log(`  ⚠️ Ride ${ride._id}: Skipped - no geometry`);
                 continue;
             }
 
+            console.log(`\n  🔄 Matching ride ${ride._id}:`);
+            console.log(`    Route: ${ride.route.start?.name} → ${ride.route.destination?.name}`);
+            console.log(`    Polyline points: ${ride.route.geometry.coordinates.length}`);
+
+            // Match using polyline
             const matchResult = this.matchRoutes(passengerRoute, ride.route);
 
             if (matchResult.isMatch) {
+                console.log(`    ✅ MATCH! Score: ${matchResult.matchScore}, Quality: ${matchResult.matchQuality}`);
                 matches.push({
                     ride: ride,
                     matchDetails: matchResult
                 });
+            } else {
+                console.log(`    ❌ No match: ${matchResult.reason}`);
             }
         }
 
         // Sort by match score (descending)
         matches.sort((a, b) => b.matchDetails.matchScore - a.matchDetails.matchScore);
 
-        // Return top matches
+        console.log(`\n🎯 [findMatchingRides] Total matches: ${matches.length}`);
         return matches.slice(0, maxResults);
     }
 
     /**
      * Get route from OSRM
-     * @param {Array} coordinates - Array of [lon, lat] points
-     * @returns {Promise<object>} Route data
      */
     async getRoute(coordinates) {
         try {
-            // Format coordinates for OSRM
             const coordString = coordinates.map(c => `${c[0]},${c[1]}`).join(';');
             
             const url = `${this.OSRM_URL}/route/v1/driving/${coordString}`;
@@ -486,57 +278,16 @@ class RouteMatching {
     }
 
     /**
-     * Calculate ETA for a point on route
-     * @param {Array} routeCoordinates - Route coordinates
-     * @param {number} pointIndex - Index of point on route
-     * @param {number} totalDuration - Total route duration in minutes
-     * @returns {number} ETA in minutes from start
-     */
-    calculateETA(routeCoordinates, pointIndex, totalDuration) {
-        const totalDistance = this.calculateRouteSegmentDistance(
-            routeCoordinates,
-            0,
-            routeCoordinates.length - 1
-        );
-
-        const distanceToPoint = this.calculateRouteSegmentDistance(
-            routeCoordinates,
-            0,
-            pointIndex
-        );
-
-        return (distanceToPoint / totalDistance) * totalDuration;
-    }
-
-    /**
      * Check if current location deviates from planned route
-     * @param {Array} currentLocation - [lon, lat]
-     * @param {Array} plannedRoute - Route coordinates
-     * @param {number} threshold - Deviation threshold in km
-     * @returns {object} Deviation check result
      */
-    checkRouteDeviation(currentLocation, plannedRoute, threshold = this.DEVIATION_THRESHOLD) {
-        const result = this.isPointNearRoute(currentLocation, plannedRoute, threshold);
+    checkRouteDeviation(currentLocation, plannedRoute, threshold = this.ROUTE_PROXIMITY_THRESHOLD) {
+        const result = this.isPointOnRoute(currentLocation, plannedRoute, threshold);
         
         return {
-            isDeviated: !result.isNear,
+            isDeviated: !result.isOnRoute,
             distance: result.distance,
-            threshold: threshold,
-            severity: this.getDeviationSeverity(result.distance, threshold)
+            threshold: threshold
         };
-    }
-
-    /**
-     * Get deviation severity level
-     * @param {number} distance - Deviation distance
-     * @param {number} threshold - Threshold
-     * @returns {string} Severity level
-     */
-    getDeviationSeverity(distance, threshold) {
-        if (distance <= threshold) return 'NONE';
-        if (distance <= threshold * 2) return 'LOW';
-        if (distance <= threshold * 4) return 'MEDIUM';
-        return 'HIGH';
     }
 }
 
