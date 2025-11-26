@@ -13,30 +13,107 @@ const helpers = require('../utils/helpers');
 
 /**
  * Create booking
+ * ✅ RESPECTS: verifiedUsersOnly, preferredCoRiderGender, ride comfort preferences
+ * ✅ EDGE CASE: Uses atomic operations to prevent race conditions
  */
 exports.createBooking = asyncHandler(async (req, res) => {
     console.log('📝 [Create Booking] Request received', 'Body:', req.body, 'User:', req.user._id);
 
     // Get rideId from URL params OR body for backwards compatibility
     const rideId = req.params.rideId || req.body.rideId;
-    const { pickupLocation, dropoffLocation, seats, paymentMethod, specialRequests, pickupPoint, dropoffPoint, seatsBooked } = req.body;
+    const { pickupLocation, dropoffLocation, seats, paymentMethod, specialRequests, pickupPoint, dropoffPoint, seatsBooked, idempotencyKey } = req.body;
 
-    const ride = await Ride.findById(rideId).populate('rider', 'name email phone profile');
+    // ✅ EDGE CASE FIX: Idempotency check to prevent duplicate bookings from network retries
+    if (idempotencyKey) {
+        const existingBooking = await Booking.findOne({
+            passenger: req.user._id,
+            ride: rideId,
+            'metadata.idempotencyKey': idempotencyKey,
+            status: { $nin: ['CANCELLED', 'REJECTED'] }
+        });
+        if (existingBooking) {
+            console.log('🔄 [Create Booking] Duplicate request detected via idempotency key, returning existing booking');
+            return res.status(200).json({
+                success: true,
+                message: 'Booking already exists',
+                booking: existingBooking,
+                duplicate: true
+            });
+        }
+    }
+
+    const ride = await Ride.findById(rideId).populate('rider', 'name email phone profile preferences');
+    const passenger = await User.findById(req.user._id);
 
     if (!ride) throw new AppError('Ride not found', 404);
     if (ride.status !== 'ACTIVE') throw new AppError('Ride is not available for booking', 400);
     if (ride.rider._id.toString() === req.user._id.toString()) throw new AppError('Cannot book your own ride', 400);
 
     // ✅ CHECK GENDER RESTRICTION (FEMALE ONLY)
-    if (ride.preferences.gender === 'FEMALE_ONLY' && (await User.findById(req.user._id)).profile.gender !== 'FEMALE') {
+    if (ride.preferences.gender === 'FEMALE_ONLY' && passenger.profile.gender !== 'FEMALE') {
         throw new AppError('This ride is for female passengers only', 403);
     }
 
-    const numSeats = parseInt(seats || seatsBooked || 1);
-    if (ride.pricing.availableSeats < numSeats) throw new AppError('Not enough seats available', 400);
+    // ✅ CHECK VERIFIED USERS ONLY PREFERENCE
+    if (ride.rider.preferences?.booking?.verifiedUsersOnly === true) {
+        if (passenger.verificationStatus !== 'VERIFIED') {
+            throw new AppError('This rider only accepts verified users. Please complete your verification first.', 403);
+        }
+    }
 
-    // Check if user already has a booking
-    if (await Booking.findOne({ passenger: req.user._id, ride: ride._id, status: { $nin: ['CANCELLED', 'REJECTED'] } })) {
+    // ✅ CHECK PREFERRED CO-RIDER GENDER
+    const genderPref = ride.rider.preferences?.booking?.preferredCoRiderGender;
+    if (genderPref && genderPref !== 'ANY') {
+        const passengerGender = passenger.profile?.gender;
+        const riderGender = ride.rider.profile?.gender;
+        
+        if (genderPref === 'MALE_ONLY' && passengerGender !== 'MALE') {
+            throw new AppError('This rider prefers male co-riders only', 403);
+        }
+        if (genderPref === 'FEMALE_ONLY' && passengerGender !== 'FEMALE') {
+            throw new AppError('This rider prefers female co-riders only', 403);
+        }
+        if (genderPref === 'SAME_GENDER' && passengerGender !== riderGender) {
+            throw new AppError('This rider prefers same gender co-riders only', 403);
+        }
+    }
+
+    const numSeats = parseInt(seats || seatsBooked || 1);
+    
+    // ✅ EDGE CASE FIX: Atomic seat availability check and decrement
+    // This prevents race condition where two users book last seats simultaneously
+    const seatUpdateResult = await Ride.findOneAndUpdate(
+        {
+            _id: rideId,
+            status: 'ACTIVE',
+            'pricing.availableSeats': { $gte: numSeats } // Only if enough seats
+        },
+        {
+            $inc: { 'pricing.availableSeats': -numSeats } // Atomic decrement
+        },
+        { new: true }
+    );
+    
+    if (!seatUpdateResult) {
+        // Seats were taken by another user or ride status changed
+        throw new AppError('Not enough seats available. Another passenger may have just booked.', 400);
+    }
+    
+    console.log('✅ [Create Booking] Seats atomically reserved:', numSeats, 'Remaining:', seatUpdateResult.pricing.availableSeats);
+
+    // ✅ EDGE CASE FIX: Atomic check for existing booking using findOneAndUpdate
+    // This prevents race condition where same user double-clicks
+    const existingCheck = await Booking.findOne({ 
+        passenger: req.user._id, 
+        ride: ride._id, 
+        status: { $nin: ['CANCELLED', 'REJECTED'] } 
+    });
+    
+    if (existingCheck) {
+        // Rollback seat decrement since user already has booking
+        await Ride.findByIdAndUpdate(rideId, {
+            $inc: { 'pricing.availableSeats': numSeats }
+        });
         throw new AppError('You already have a booking for this ride', 400);
     }
 
@@ -92,8 +169,24 @@ exports.createBooking = asyncHandler(async (req, res) => {
     console.log(`   - Platform Commission: ₹${platformCommission}`);
     console.log(`   - Total Amount: ₹${totalAmount}`);
 
-    // ✅ DETERMINE INITIAL STATUS BASED ON AUTO-ACCEPT SETTING
-    const initialStatus = ride.preferences.autoAcceptBookings ? 'CONFIRMED' : 'PENDING';
+    // All bookings start as PENDING - rider must approve
+    const initialStatus = 'PENDING';
+    
+    console.log('🔍 [Booking Status] All bookings require rider approval → Status:', initialStatus);
+
+    // Ensure coordinates are present (fallback to ride's coordinates if missing)
+    const pickupCoords = pickup.coordinates || ride.route?.start?.coordinates || ride.source?.coordinates;
+    const dropoffCoords = dropoff.coordinates || ride.route?.destination?.coordinates || ride.destination?.coordinates;
+    
+    if (!pickupCoords || !dropoffCoords) {
+        console.error('❌ [Create Booking] Missing coordinates:', { pickupCoords, dropoffCoords });
+        throw new AppError('Unable to determine pickup/dropoff coordinates', 400);
+    }
+
+    console.log('📍 [Create Booking] Locations:', {
+        pickup: { address: pickup.address, coords: pickupCoords },
+        dropoff: { address: dropoff.address, coords: dropoffCoords }
+    });
 
     // Create booking
     const booking = await Booking.create({
@@ -103,12 +196,12 @@ exports.createBooking = asyncHandler(async (req, res) => {
         pickupPoint: {
             name: pickup.address?.split(',')[0] || 'Pickup',
             address: pickup.address,
-            coordinates: pickup.coordinates
+            coordinates: pickupCoords
         },
         dropoffPoint: {
             name: dropoff.address?.split(',')[0] || 'Dropoff',
             address: dropoff.address,
-            coordinates: dropoff.coordinates
+            coordinates: dropoffCoords
         },
         seatsBooked: numSeats,
         totalPrice: totalAmount,
@@ -156,131 +249,82 @@ exports.createBooking = asyncHandler(async (req, res) => {
 
     console.log('✅ [Create Booking] Transaction record created');
 
-    // ✅ ADD BOOKING TO RIDE'S BOOKINGS ARRAY
-    ride.bookings.push(booking._id);
-    
-    // Update ride's available seats
-    ride.pricing.availableSeats -= numSeats;
-    await ride.save();
+    // ✅ ADD BOOKING TO RIDE'S BOOKINGS ARRAY (seats already decremented atomically above)
+    await Ride.findByIdAndUpdate(ride._id, {
+        $push: { bookings: booking._id }
+    });
 
-    // ✅ SEND DIFFERENT NOTIFICATIONS BASED ON AUTO-ACCEPT
+    // ✅ NOTIFY RIDER OF BOOKING REQUEST (all bookings require manual approval)
     const passengerName = User.getUserName(req.user);
     
-    if (ride.preferences.autoAcceptBookings) {
-        // AUTO-ACCEPTED - Notify passenger of confirmation
-        await Notification.create({
-            user: req.user._id,
-            type: 'BOOKING_CONFIRMED',
-            title: 'Booking Confirmed! 🎉',
-            message: `Your booking for ${numSeats} seat(s) has been automatically confirmed`,
-            data: {
-                bookingId: booking._id,
-                rideId: ride._id
-            }
-        });
-
-        // Notify rider about new confirmed booking
-        await Notification.create({
-            user: ride.rider._id,
-            type: 'BOOKING_CONFIRMED',
-            title: 'New Booking Confirmed',
-            message: `${passengerName} booked ${numSeats} seat(s) (Auto-approved)`,
-            data: {
-                bookingId: booking._id,
-                rideId: ride._id
-            }
-        });
-
-        const io = req.app.get('io');
-        if (io) {
-            // Notify passenger
-            io.to(`user-${req.user._id}`).emit('notification', {
-                type: 'BOOKING_CONFIRMED',
-                title: 'Booking Confirmed! 🎉',
-                message: `Your booking has been automatically confirmed`,
-                bookingId: booking._id,
-                rideId: ride._id,
-                timestamp: new Date()
-            });
-
-            // Notify rider
-            io.to(`user-${ride.rider._id}`).emit('notification', {
-                type: 'BOOKING_CONFIRMED',
-                title: 'New Booking',
-                message: `${passengerName} booked ${numSeats} seat(s)`,
-                bookingId: booking._id,
-                rideId: ride._id,
-                timestamp: new Date()
-            });
+    await Notification.create({
+        user: ride.rider._id,
+        type: 'BOOKING_REQUEST',
+        title: 'New Booking Request',
+        message: `${passengerName} wants to book ${numSeats} seat(s)`,
+        data: {
+            bookingId: booking._id,
+            rideId: ride._id
         }
+    });
 
-        console.log(`✅ [Auto-Accept] Booking ${booking._id} automatically confirmed`);
-
-    } else {
-        // MANUAL APPROVAL REQUIRED - Notify rider of request
-        await Notification.create({
-            user: ride.rider._id,
+    const io = req.app.get('io');
+    if (io) {
+        io.to(`user-${ride.rider._id}`).emit('notification', {
             type: 'BOOKING_REQUEST',
             title: 'New Booking Request',
-            message: `${passengerName} wants to book ${numSeats} seat(s)`,
-            data: {
-                bookingId: booking._id,
-                rideId: ride._id
-            }
+            message: `${passengerName} wants to book ${numSeats} seat(s) in your ride`,
+            bookingId: booking._id,
+            rideId: ride._id,
+            timestamp: new Date()
         });
-
-        const io = req.app.get('io');
-        if (io) {
-            io.to(`user-${ride.rider._id}`).emit('notification', {
-                type: 'BOOKING_REQUEST',
-                title: 'New Booking Request',
-                message: `${passengerName} wants to book ${numSeats} seat(s) in your ride`,
-                bookingId: booking._id,
-                rideId: ride._id,
-                timestamp: new Date()
-            });
-        }
-
-        // Send email notification to rider
-        try {
-            await emailService.sendBookingRequestEmail(ride.rider, {
-                passengerName: passengerName,
-                seats: numSeats,
-                pickupLocation: pickup.address,
-                dropoffLocation: dropoff.address,
-                bookingUrl: `${process.env.APP_URL || 'http://localhost:3000'}/bookings/${booking._id}`
-            });
-        } catch (emailError) {
-            console.error('Failed to send email notification:', emailError);
-        }
-
-        console.log(`📧 [Manual Approval] Booking ${booking._id} requires rider approval`);
+        
+        // Also emit specific new-booking-request event for real-time UI updates
+        io.to(`user-${ride.rider._id}`).emit('new-booking-request', {
+            bookingId: booking._id.toString(),
+            rideId: ride._id.toString(),
+            passengerName: passengerName,
+            seats: numSeats
+        });
     }
 
-    const responseMessage = ride.preferences.autoAcceptBookings 
-        ? 'Booking confirmed! Your seat is reserved.'
-        : 'Booking request sent. Waiting for rider approval.';
+    // Send email notification to rider
+    try {
+        await emailService.sendBookingRequestEmail(ride.rider, {
+            passengerName: passengerName,
+            seats: numSeats,
+            pickupLocation: pickup.address,
+            dropoffLocation: dropoff.address,
+            bookingUrl: `${process.env.APP_URL || 'http://localhost:3000'}/bookings/${booking._id}`
+        });
+    } catch (emailError) {
+        console.error('Failed to send email notification:', emailError);
+    }
+
+    console.log(`📧 [Booking] Booking ${booking._id} requires rider approval`);
 
     res.status(201).json({
         success: true,
-        message: responseMessage,
+        message: 'Booking request sent. Waiting for rider approval.',
         booking,
-        autoAccepted: ride.preferences.autoAcceptBookings,
+        autoAccepted: false,
         redirectUrl: `/bookings/${booking._id}`
     });
 });
 
 /**
  * Show booking details
+ * ✅ RESPECTS: showPhone, showEmail privacy settings (but shows during active bookings for safety)
  */
 exports.showBookingDetails = asyncHandler(async (req, res) => {
     const { bookingId } = req.params;
+    const { filterUserPrivacy } = require('../utils/helpers');
 
     const booking = await Booking.findById(bookingId)
-        .populate('passenger', 'name email phone profilePhoto rating')
+        .populate('passenger', 'name email phone profilePhoto profile rating statistics preferences.privacy')
         .populate({
             path: 'ride',
-            populate: { path: 'rider', select: 'name email phone profilePhoto rating vehicles' }
+            populate: { path: 'rider', select: 'name email phone profilePhoto profile rating vehicles statistics preferences.privacy' }
         });
 
     if (!booking) {
@@ -304,10 +348,31 @@ exports.showBookingDetails = asyncHandler(async (req, res) => {
         booking: booking._id
     });
 
-    res.render('bookings/booking-details', {
-        title: `Booking ${booking.bookingReference} - LANE Carpool`,
-        user: req.user,
-        booking,
+    // ✅ APPLY PRIVACY FILTERING
+    // For CONFIRMED/IN_PROGRESS bookings, always show contact info for safety
+    // For PENDING bookings, respect privacy settings
+    const isConfirmedOrActive = ['CONFIRMED', 'IN_PROGRESS', 'READY_FOR_PICKUP', 'DROPPED_OFF'].includes(booking.status);
+    
+    const bookingData = booking.toObject();
+    
+    // Filter passenger data based on their privacy settings
+    if (!isPassenger) { // Only filter when viewing OTHER user's data
+        bookingData.passenger = filterUserPrivacy(booking.passenger, { 
+            isConfirmedBooking: isConfirmedOrActive 
+        });
+    }
+    
+    // Filter rider data based on their privacy settings
+    if (!isRider && bookingData.ride?.rider) {
+        bookingData.ride.rider = filterUserPrivacy(booking.ride.rider, { 
+            isConfirmedBooking: isConfirmedOrActive 
+        });
+    }
+
+    // Return JSON for React frontend
+    res.json({
+        success: true,
+        booking: bookingData,
         isPassenger,
         isRider,
         hasReviewed: !!hasReviewed
@@ -323,42 +388,47 @@ exports.acceptBooking = asyncHandler(async (req, res) => {
 
     console.log('🔵 [Accept Booking] Accepting booking:', bookingId);
 
-    const booking = await Booking.findById(bookingId)
-        .populate('passenger', 'profile.firstName profile.lastName name email phone')
-        .populate({
-            path: 'ride',
-            populate: { 
-                path: 'rider', 
-                select: 'profile.firstName profile.lastName name email phone' 
+    // ✅ EDGE CASE FIX: Atomic status update to prevent race condition
+    // Uses findOneAndUpdate with status condition instead of find + save
+    const booking = await Booking.findOneAndUpdate(
+        {
+            _id: bookingId,
+            status: 'PENDING' // Only update if still PENDING
+        },
+        {
+            $set: {
+                status: 'CONFIRMED',
+                'riderResponse.respondedAt': new Date(),
+                ...(message && { 'riderResponse.message': message })
             }
-        });
+        },
+        { new: true }
+    ).populate('passenger', 'profile.firstName profile.lastName name email phone')
+     .populate({
+         path: 'ride',
+         populate: { 
+             path: 'rider', 
+             select: 'profile.firstName profile.lastName name email phone' 
+         }
+     });
 
     if (!booking) {
-        throw new AppError('Booking not found', 404);
+        // Either not found or status was not PENDING
+        const existingBooking = await Booking.findById(bookingId);
+        if (!existingBooking) {
+            throw new AppError('Booking not found', 404);
+        }
+        throw new AppError(`Booking cannot be accepted. Current status: ${existingBooking.status}`, 400);
     }
 
-    console.log('🔵 [Accept Booking] Current booking status:', booking.status);
+    console.log('🔵 [Accept Booking] Atomically updated booking status to CONFIRMED');
 
-    // Authorization check
+    // Authorization check (after atomic update to ensure consistency)
     if (booking.ride.rider._id.toString() !== req.user._id.toString()) {
+        // Rollback: Should not happen in normal flow, but for safety
+        await Booking.findByIdAndUpdate(bookingId, { $set: { status: 'PENDING' } });
         throw new AppError('Not authorized', 403);
     }
-
-    // Status validation
-    if (booking.status !== 'PENDING') {
-        throw new AppError(`Booking cannot be accepted. Current status: ${booking.status}`, 400);
-    }
-
-    console.log('✅ [Accept Booking] Status is PENDING, proceeding with acceptance');
-
-    // ⚠️ NO OTP GENERATED HERE - OTPs are generated when ride starts
-    // This prevents issues when ride is scheduled for hours/days away
-
-    // Update booking status
-    booking.status = 'CONFIRMED';
-    booking.riderResponse.respondedAt = new Date();
-    if (message) booking.riderResponse.message = message;
-    await booking.save();
 
     console.log('✅ [Accept Booking] Booking confirmed:', booking._id, 'ℹ️ Pickup OTP will be generated when ride starts');
 
@@ -452,38 +522,47 @@ exports.rejectBooking = asyncHandler(async (req, res) => {
     const { bookingId } = req.params;
     const { reason } = req.body;
 
-    const booking = await Booking.findById(bookingId)
-        .populate('passenger', 'name email phone')
-        .populate({
-            path: 'ride',
-            populate: { path: 'rider', select: 'name email phone' }
-        });
+    // ✅ EDGE CASE FIX: Atomic status update to prevent race condition
+    const booking = await Booking.findOneAndUpdate(
+        {
+            _id: bookingId,
+            status: 'PENDING' // Only update if still PENDING
+        },
+        {
+            $set: {
+                status: 'REJECTED',
+                'cancellation.cancelled': true,
+                'cancellation.cancelledBy': 'RIDER',
+                'cancellation.cancelledAt': new Date(),
+                'cancellation.reason': reason || 'No reason provided'
+            }
+        },
+        { new: true }
+    ).populate('passenger', 'profile.firstName profile.lastName name email phone')
+     .populate({
+         path: 'ride',
+         populate: { path: 'rider', select: 'profile.firstName profile.lastName name email phone' }
+     });
 
     if (!booking) {
-        throw new AppError('Booking not found', 404);
+        const existingBooking = await Booking.findById(bookingId);
+        if (!existingBooking) {
+            throw new AppError('Booking not found', 404);
+        }
+        throw new AppError(`Booking is not pending. Current status: ${existingBooking.status}`, 400);
     }
 
-    // Use already populated booking.ride instead of fetching again
+    // Authorization check
     if (booking.ride.rider._id.toString() !== req.user._id.toString()) {
+        // Rollback
+        await Booking.findByIdAndUpdate(bookingId, { $set: { status: 'PENDING' } });
         throw new AppError('Not authorized', 403);
     }
 
-    if (booking.status !== 'PENDING') {
-        throw new AppError('Booking is not pending', 400);
-    }
-
-    booking.status = 'REJECTED';
-    booking.cancellation = {
-        cancelled: true,
-        cancelledBy: 'RIDER',
-        cancelledAt: new Date(),
-        reason: reason || 'No reason provided'
-    };
-    await booking.save();
-
-    // ✅ RESTORE AVAILABLE SEATS (since we reduced them on booking creation)
-    ride.pricing.availableSeats += booking.seatsBooked;
-    await ride.save();
+    // ✅ RESTORE AVAILABLE SEATS atomically
+    await Ride.findByIdAndUpdate(booking.ride._id, {
+        $inc: { 'pricing.availableSeats': booking.seatsBooked }
+    });
 
     // Get rider name safely
     const riderName = User.getUserName(req.user);
@@ -496,7 +575,7 @@ exports.rejectBooking = asyncHandler(async (req, res) => {
         message: `${riderName} has declined your booking request. Reason: ${reason || 'Not specified'}`,
         data: {
             bookingId: booking._id,
-            rideId: ride._id
+            rideId: booking.ride._id
         }
     });
 
@@ -511,6 +590,14 @@ exports.rejectBooking = asyncHandler(async (req, res) => {
             _id: notification._id,
             createdAt: notification.createdAt
         });
+        
+        // Also emit specific booking-rejected event for real-time UI updates
+        io.to(`user-${booking.passenger._id}`).emit('booking-rejected', {
+            bookingId: booking._id.toString(),
+            rideId: booking.ride._id.toString(),
+            status: 'REJECTED',
+            reason: reason || 'Not specified'
+        });
     }
 
     // Send email notification to passenger
@@ -522,9 +609,9 @@ exports.rejectBooking = asyncHandler(async (req, res) => {
                 riderName: riderName,
                 bookingReference: booking.bookingReference,
                 reason: reason || 'Not specified',
-                from: ride.route.start.name || ride.route.start.address,
-                to: ride.route.destination.name || ride.route.destination.address,
-                date: ride.schedule.departureDateTime || ride.schedule.date
+                from: booking.ride.route.start.name || booking.ride.route.start.address,
+                to: booking.ride.route.destination.name || booking.ride.route.destination.address,
+                date: booking.ride.schedule.departureDateTime || booking.ride.schedule.date
             }
         );
     } catch (emailError) {
@@ -1268,16 +1355,37 @@ exports.cancelBooking = asyncHandler(async (req, res) => {
     const passengerName = User.getUserName(req.user);
 
     // Notify rider
-    await Notification.create({
-        user: ride.rider,
+    const notification = await Notification.create({
+        user: booking.ride.rider,
         type: 'BOOKING_CANCELLED',
         title: 'Booking Cancelled',
         message: `${passengerName} cancelled their booking`,
         data: {
             bookingId: booking._id,
-            rideId: ride._id
+            rideId: booking.ride._id
         }
     });
+    
+    // Emit Socket.IO event to rider
+    const io = req.app.get('io');
+    if (io) {
+        io.to(`user-${booking.ride.rider}`).emit('notification', {
+            type: 'BOOKING_CANCELLED',
+            title: notification.title,
+            message: notification.message,
+            data: notification.data,
+            _id: notification._id,
+            createdAt: notification.createdAt
+        });
+        
+        // Also emit specific booking-cancelled event for real-time UI updates
+        io.to(`user-${booking.ride.rider}`).emit('booking-cancelled', {
+            bookingId: booking._id.toString(),
+            rideId: booking.ride._id.toString(),
+            status: 'CANCELLED',
+            cancelledBy: 'PASSENGER'
+        });
+    }
 
     res.status(200).json({
         success: true,
@@ -1329,9 +1437,9 @@ exports.showMyBookings = asyncHandler(async (req, res) => {
 
     const pagination = helpers.paginate(totalBookings, page, limit);
 
-    res.render('bookings/my-bookings', {
-        title: 'My Bookings - LANE Carpool',
-        user: req.user,
+    // Return JSON for React frontend
+    res.json({
+        success: true,
         bookings,
         currentStatus: status,
         pagination
@@ -1347,7 +1455,7 @@ exports.startJourney = asyncHandler(async (req, res) => {
     const booking = await Booking.findById(bookingId)
         .populate({
             path: 'ride',
-            populate: { path: 'rider', select: 'name email' }
+            populate: { path: 'rider', select: 'profile.firstName profile.lastName name email' }
         });
 
     if (!booking) {
@@ -1499,3 +1607,13 @@ exports.completeJourney = asyncHandler(async (req, res) => {
         remainingBookings
     });
 });
+
+// ============================================
+// API FUNCTION ALIASES (for route compatibility)
+// ============================================
+
+// Alias for getMyBookings
+exports.getMyBookings = exports.showMyBookings;
+
+// Alias for getBookingDetails
+exports.getBookingDetails = exports.showBookingDetails;

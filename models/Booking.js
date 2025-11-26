@@ -197,6 +197,25 @@ const bookingSchema = new mongoose.Schema({
         refundIssued: { type: Boolean, default: false }
     },
     
+    // Auto-Reassignment Tracking
+    reassignment: {
+        // If this booking was created from reassignment
+        isReassigned: { type: Boolean, default: false },
+        originalBooking: { type: mongoose.Schema.Types.ObjectId, ref: 'Booking' },
+        originalRide: { type: mongoose.Schema.Types.ObjectId, ref: 'Ride' },
+        reassignedAt: Date,
+        reason: String,
+        
+        // If this booking was cancelled and reassigned to another ride
+        chain: [{
+            fromRide: { type: mongoose.Schema.Types.ObjectId, ref: 'Ride' },
+            toRide: { type: mongoose.Schema.Types.ObjectId, ref: 'Ride' },
+            reassignedAt: Date,
+            matchScore: Number
+        }],
+        attempts: { type: Number, default: 0 }
+    },
+    
     // Review Status
     reviews: {
         passengerReviewed: { type: Boolean, default: false },
