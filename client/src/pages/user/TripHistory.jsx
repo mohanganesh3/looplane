@@ -3,6 +3,7 @@ import { Link, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import userService from '../../services/userService';
 import { Alert } from '../../components/common';
+import { getRating, formatRating } from '../../utils/helpers';
 
 const TripHistory = () => {
   const { user } = useAuth();
@@ -44,7 +45,7 @@ const TripHistory = () => {
         setStats({
           totalTrips: response.pagination?.total || response.trips?.length || 0,
           totalAmount,
-          avgRating: user?.rating?.overall || 0
+          avgRating: getRating(user?.rating)
         });
       }
     } catch (err) {
@@ -132,9 +133,9 @@ const TripHistory = () => {
                 <p className="text-gray-600 text-sm mb-1">Average Rating</p>
                 <div className="flex items-center space-x-2">
                   <p className="text-3xl font-bold text-gray-800">
-                    {stats.avgRating.toFixed(1)}
+                    {Number(stats.avgRating || 0).toFixed(1)}
                   </p>
-                  <div className="text-lg">{renderStars(stats.avgRating)}</div>
+                  <div className="text-lg">{renderStars(stats.avgRating || 0)}</div>
                 </div>
               </div>
               <div className="w-12 h-12 bg-yellow-100 rounded-full flex items-center justify-center">
@@ -202,23 +203,27 @@ const TripHistory = () => {
                     <div className="flex items-start justify-between mb-4">
                       <div className="flex items-center space-x-3">
                         <img
-                          src={trip.ride?.rider?.profilePhoto || '/images/default-avatar.png'}
+                          src={trip.ride?.rider?.profile?.photo || trip.ride?.rider?.profilePhoto || '/images/default-avatar.png'}
                           className="w-12 h-12 rounded-full object-cover"
-                          alt={trip.ride?.rider?.name}
+                          alt={trip.ride?.rider?.profile?.firstName || trip.ride?.rider?.name}
                         />
                         <div>
-                          <h3 className="font-semibold text-gray-800">{trip.ride?.rider?.name}</h3>
+                          <h3 className="font-semibold text-gray-800">
+                            {trip.ride?.rider?.profile?.firstName 
+                              ? `${trip.ride.rider.profile.firstName} ${trip.ride.rider.profile.lastName || ''}`
+                              : trip.ride?.rider?.name || 'Unknown'}
+                          </h3>
                           <div className="flex items-center text-sm text-gray-600">
                             <div className="text-yellow-400 mr-2">
-                              {renderStars(trip.ride?.rider?.rating?.overall || 0)}
+                              {renderStars(getRating(trip.ride?.rider?.rating))}
                             </div>
-                            <span>{(trip.ride?.rider?.rating?.overall || 0).toFixed(1)}</span>
+                            <span>{formatRating(trip.ride?.rider?.rating)}</span>
                           </div>
                         </div>
                       </div>
                       <div className="text-right">
                         <div className="text-2xl font-bold text-emerald-600 mb-1">
-                          ₹{trip.totalAmount || 0}
+                          ₹{trip.totalPrice || trip.totalAmount || 0}
                         </div>
                         <p className="text-sm text-gray-600">{trip.seatsBooked} seat(s)</p>
                       </div>
@@ -232,21 +237,25 @@ const TripHistory = () => {
                     <div className="flex items-center text-gray-700">
                       <span className="text-green-600 w-6">📍</span>
                       <span className="ml-2 font-medium">
-                        {isRider ? trip.from?.address : trip.ride?.from?.address || 'Not available'}
+                        {isRider 
+                          ? (trip.route?.start?.address || trip.from?.address) 
+                          : (trip.ride?.route?.start?.address || trip.ride?.from?.address || 'Not available')}
                       </span>
                     </div>
                     <div className="flex items-center text-gray-400 ml-6">
                       <span className="ml-3 text-sm">
                         {isRider
-                          ? trip.distance ? `${trip.distance.toFixed(1)} km` : ''
-                          : trip.ride?.distance ? `${trip.ride.distance.toFixed(1)} km` : ''
+                          ? (trip.route?.distance?.value ? `${(trip.route.distance.value / 1000).toFixed(1)} km` : (trip.distance ? `${trip.distance.toFixed(1)} km` : ''))
+                          : (trip.ride?.route?.distance?.value ? `${(trip.ride.route.distance.value / 1000).toFixed(1)} km` : (trip.ride?.distance ? `${trip.ride.distance.toFixed(1)} km` : ''))
                         }
                       </span>
                     </div>
                     <div className="flex items-center text-gray-700">
                       <span className="text-red-600 w-6">📍</span>
                       <span className="ml-2 font-medium">
-                        {isRider ? trip.to?.address : trip.ride?.to?.address || 'Not available'}
+                        {isRider 
+                          ? (trip.route?.destination?.address || trip.to?.address) 
+                          : (trip.ride?.route?.destination?.address || trip.ride?.to?.address || 'Not available')}
                       </span>
                     </div>
                   </div>
@@ -256,18 +265,18 @@ const TripHistory = () => {
                     <div className="mt-4 p-3 bg-gradient-to-r from-green-50 to-teal-50 rounded-lg border border-green-200">
                       <div className="flex items-center justify-between">
                         <div className="flex items-center space-x-2">
-                          <span className="text-2xl">🌱</span>
+                          <i className="fas fa-seedling text-2xl text-green-500"></i>
                           <div>
                             <p className="text-xs text-gray-600 font-medium">Carbon Impact</p>
                             <p className="text-lg font-bold text-green-600">
-                              {trip.carbonSaved.toFixed(1)} kg CO₂ saved
+                              {Number(trip.carbonSaved || 0).toFixed(1)} kg CO₂ saved
                             </p>
                           </div>
                         </div>
                         <div className="text-right">
                           <p className="text-xs text-gray-600">Equivalent to</p>
                           <p className="text-sm font-semibold text-green-700">
-                            🌳 {(trip.carbonSaved / 21).toFixed(1)} trees
+                            🌳 {((trip.carbonSaved || 0) / 21).toFixed(1)} trees
                           </p>
                         </div>
                       </div>

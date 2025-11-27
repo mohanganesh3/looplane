@@ -27,11 +27,11 @@ const CarbonReport = () => {
   };
 
   const getBadge = (totalSaved) => {
-    if (totalSaved >= 1000) return { emoji: '🌍', name: 'Earth Guardian', color: 'from-green-500 to-teal-500' };
-    if (totalSaved >= 500) return { emoji: '🌳', name: 'Forest Protector', color: 'from-green-400 to-emerald-500' };
-    if (totalSaved >= 100) return { emoji: '🌱', name: 'Eco Warrior', color: 'from-emerald-400 to-green-500' };
-    if (totalSaved >= 50) return { emoji: '🍃', name: 'Green Champion', color: 'from-lime-400 to-green-400' };
-    return { emoji: '🌿', name: 'Eco Starter', color: 'from-lime-300 to-green-300' };
+    if (totalSaved >= 1000) return { iconClass: 'fa-globe-americas', name: 'Earth Guardian', color: 'from-green-500 to-teal-500' };
+    if (totalSaved >= 500) return { iconClass: 'fa-tree', name: 'Forest Protector', color: 'from-green-400 to-emerald-500' };
+    if (totalSaved >= 100) return { iconClass: 'fa-seedling', name: 'Eco Warrior', color: 'from-emerald-400 to-green-500' };
+    if (totalSaved >= 50) return { iconClass: 'fa-leaf', name: 'Green Champion', color: 'from-lime-400 to-green-400' };
+    return { iconClass: 'fa-spa', name: 'Eco Starter', color: 'from-lime-300 to-green-300' };
   };
 
   if (loading) {
@@ -54,12 +54,12 @@ const CarbonReport = () => {
           <div className="flex items-center justify-between">
             <div>
               <h1 className="text-3xl font-bold mb-2 flex items-center">
-                🌍 Carbon Impact Report
+                <i className="fas fa-globe-americas mr-2"></i> Carbon Impact Report
               </h1>
               <p className="opacity-90">Your contribution to a greener planet</p>
             </div>
             <div className="text-center">
-              <div className="text-6xl mb-2">{badge.emoji}</div>
+              <i className={`fas ${badge.iconClass} text-6xl mb-2`}></i>
               <p className="text-lg font-semibold">{badge.name}</p>
             </div>
           </div>
@@ -71,7 +71,7 @@ const CarbonReport = () => {
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
           <div className="bg-white rounded-xl shadow-lg p-6 text-center">
             <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
-              <span className="text-3xl">🌿</span>
+              <i className="fas fa-spa text-3xl text-green-600"></i>
             </div>
             <p className="text-gray-600 text-sm mb-1">Total CO₂ Saved</p>
             <p className="text-4xl font-bold text-emerald-600">
@@ -82,7 +82,7 @@ const CarbonReport = () => {
 
           <div className="bg-white rounded-xl shadow-lg p-6 text-center">
             <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
-              <span className="text-3xl">🌳</span>
+              <i className="fas fa-tree text-3xl text-green-600"></i>
             </div>
             <p className="text-gray-600 text-sm mb-1">Equivalent Trees</p>
             <p className="text-4xl font-bold text-green-600">{equivalentTrees}</p>
@@ -91,7 +91,7 @@ const CarbonReport = () => {
 
           <div className="bg-white rounded-xl shadow-lg p-6 text-center">
             <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4">
-              <span className="text-3xl">🚗</span>
+              <i className="fas fa-car text-3xl text-blue-600"></i>
             </div>
             <p className="text-gray-600 text-sm mb-1">Cars Off Road</p>
             <p className="text-4xl font-bold text-blue-600">{carsOffRoad}</p>
