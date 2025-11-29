@@ -20,12 +20,11 @@ const path = require('path');
 const helmet = require('helmet');
 const compression = require('compression');
 const morgan = require('morgan');
-const cors = require('cors');
 const http = require('http');
 const socketIO = require('socket.io');
 
-// User utilities for consistent display values
-const { enrichUsers, getUserDisplay } = require('./utils/userUtils');
+// User utilities (kept for API enrichment)
+const { enrichUsers } = require('./utils/userUtils');
 
 // Import database configuration
 const connectDB = require('./config/database');
@@ -47,9 +46,6 @@ app.use(helmet({
     contentSecurityPolicy: false // Disable for development
 }));
 
-// Enable CORS
-app.use(cors());
-
 // Compression middleware
 app.use(compression());
 
@@ -65,28 +61,6 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 // Static files
 app.use(express.static(path.join(__dirname, 'public')));
 app.use('/uploads', express.static(path.join(__dirname, 'public/uploads')));
-
-// View engine setup
-app.set('view engine', 'ejs');
-app.set('views', path.join(__dirname, 'views'));
-// Disable EJS caching in development
-if (process.env.NODE_ENV !== 'production') {
-    app.set('view cache', false);
-}
-
-// Disable client-side caching on auth pages to prevent stale templates/scripts
-app.use('/auth', (req, res, next) => {
-    res.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
-    res.set('Pragma', 'no-cache');
-    res.set('Expires', '0');
-    res.set('Surrogate-Control', 'no-store');
-    next();
-});
-
-// Disable view cache in development
-if (process.env.NODE_ENV === 'development') {
-    app.set('view cache', false);
-}
 
 // Session configuration
 app.use(session({
@@ -107,10 +81,7 @@ app.use(session({
 // Flash messages middleware
 app.use(flash());
 
-// Import User model for helper function
-const User = require('./models/User');
-
-// Make session available in views + Add helper functions
+// Make session data available in req
 app.use((req, res, next) => {
     res.locals.user = req.session.user || null;
     res.locals.isAuthenticated = !!req.session.user;
@@ -120,43 +91,6 @@ app.use((req, res, next) => {
     res.locals.error = req.flash('error');
     res.locals.info = req.flash('info');
     res.locals.warning = req.flash('warning');
-    
-    // Helper function to safely get user name in EJS templates
-    res.locals.getUserName = function(userObj) {
-        return User.getUserName(userObj);
-    };
-
-    // Helper to retrieve name/photo/initials trio quickly
-    res.locals.getUserDisplay = function(userObj) {
-        return getUserDisplay(userObj);
-    };
-    
-    next();
-});
-
-// Automatically enrich any user-like objects before rendering EJS templates
-app.use((req, res, next) => {
-    const originalRender = res.render.bind(res);
-
-    res.render = function(view, options, callback) {
-        let opts = options;
-        let cb = callback;
-
-        if (typeof opts === 'function') {
-            cb = opts;
-            opts = undefined;
-        }
-
-        if (opts && typeof opts === 'object') {
-            enrichUsers(opts);
-        } else if (!opts) {
-            // When options omitted, Express will use res.locals. Ensure they are enriched too.
-            enrichUsers(res.locals);
-        }
-
-        return originalRender(view, opts, cb);
-    };
-
     next();
 });
 
@@ -315,6 +249,21 @@ io.on('connection', (socket) => {
         }
     });
     
+    // Ride status update (driver updating ride status)
+    socket.on('ride-status-update', (data) => {
+        const { rideId, status } = data;
+        console.log(`📊 [Ride Status] Updating ride ${rideId} to status: ${status}`);
+        
+        // Broadcast to all passengers tracking this ride
+        if (rideId) {
+            io.to(`ride-${rideId}`).emit('ride-status-update', {
+                rideId,
+                status,
+                timestamp: new Date()
+            });
+        }
+    });
+    
     // Chat message (legacy - now handled via API)
     socket.on('send-message', (data) => {
         const { bookingId, message, senderId } = data;
@@ -360,29 +309,60 @@ const { notFound, errorHandler } = require('./middleware/errorHandler');
 // Attach user to req for all routes
 app.use(attachUser);
 
-// Home page
-app.get('/', (req, res) => {
-    res.render('pages/home', {
-        title: 'LANE - Carpool Platform',
-        user: req.user
+// API health check / status endpoint
+app.get('/api/health', (req, res) => {
+    res.json({
+        success: true,
+        message: 'LANE Carpool API is running',
+        timestamp: new Date().toISOString()
     });
 });
 
-// Use routes
-app.use('/auth', authRoutes);
-app.use('/user', userRoutes);
-app.use('/rides', rideRoutes);
-app.use('/bookings', bookingRoutes);
-app.use('/chat', chatRoutes);
-app.use('/tracking', trackingRoutes);
-app.use('/admin', adminRoutes);
-app.use('/admin', geoFencingRoutes);
-app.use('/api', apiRoutes);
-app.use('/reviews', reviewRoutes);
-app.use('/reports', reportRoutes);
-app.use('/sos', sosRoutes);
+// Use routes - ALL APIs under /api prefix for clean separation from SPA routes
+// Debug logging for all API requests
+app.use('/api', (req, res, next) => {
+    if (req.method === 'PUT' || req.method === 'POST') {
+        console.log(`\n📥 [${req.method}] ${req.originalUrl}`);
+        console.log('   Body:', JSON.stringify(req.body, null, 2).substring(0, 500));
+    }
+    next();
+});
 
-// 404 handler
+app.use('/api/auth', authRoutes);
+app.use('/api/user', userRoutes);
+app.use('/api/rides', rideRoutes);
+app.use('/api/bookings', bookingRoutes);
+app.use('/api/chat', chatRoutes);
+app.use('/api/tracking', trackingRoutes);
+app.use('/api/admin', adminRoutes);
+app.use('/api/admin', geoFencingRoutes);
+app.use('/api', apiRoutes);
+app.use('/api/reviews', reviewRoutes);
+app.use('/api/reports', reportRoutes);
+app.use('/api/sos', sosRoutes);
+
+// Serve React SPA - for production mode or when accessing backend directly
+// Serve static files from React build
+app.use(express.static(path.join(__dirname, 'client/dist')));
+
+// SPA fallback - serve index.html for all non-API routes
+app.get('*', (req, res, next) => {
+    // All API routes are now under /api prefix
+    if (req.path.startsWith('/api/') || req.path.startsWith('/uploads/') || req.path.startsWith('/socket.io/')) {
+        return next();
+    }
+    
+    // Serve React app for all client-side routes (including /admin/*)
+    const indexPath = path.join(__dirname, 'client/dist/index.html');
+    if (require('fs').existsSync(indexPath)) {
+        res.sendFile(indexPath);
+    } else {
+        // If no build exists, redirect to Vite dev server
+        res.redirect(`http://localhost:5173${req.path}`);
+    }
+});
+
+// 404 handler - only for API routes now
 app.use(notFound);
 
 // Global error handler
@@ -404,6 +384,19 @@ server.listen(PORT, () => {
     ║                                                       ║
     ╚═══════════════════════════════════════════════════════╝
     `);
+    
+    // ✅ EDGE CASE FIX: Run scheduled jobs to handle expired rides/bookings
+    const scheduledJobs = require('./utils/scheduledJobs');
+    
+    // Run immediately on startup
+    scheduledJobs.runAllJobs();
+    
+    // Run every 5 minutes
+    setInterval(() => {
+        scheduledJobs.runAllJobs();
+    }, 5 * 60 * 1000); // 5 minutes
+    
+    console.log('✅ [Scheduled Jobs] Started - running every 5 minutes');
 });
 
 // Graceful shutdown
