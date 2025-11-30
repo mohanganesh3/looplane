@@ -3,7 +3,11 @@ import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-d
 import { AuthProvider } from './context/AuthContext';
 import { SocketProvider } from './context/SocketContext';
 import { NotificationProvider } from './context/NotificationContext';
+import { ToastProvider } from './components/common/Toast';
+import ErrorBoundary from './components/common/ErrorBoundary';
 import Layout from './components/layout/Layout';
+import AdminLayout from './components/layout/AdminLayout';
+import ReassignmentAlert from './components/common/ReassignmentAlert';
 
 // Auth Pages
 import { Login, Register, VerifyOtp, ForgotPassword, ResetPassword } from './pages/auth';
@@ -12,22 +16,22 @@ import { Login, Register, VerifyOtp, ForgotPassword, ResetPassword } from './pag
 import { Home } from './pages/home';
 
 // User Pages
-import { Dashboard, Profile, Notifications, LicenseUpload, Reviews } from './pages/user';
+import { Dashboard, Profile, Notifications, LicenseUpload, Reviews, Settings, TripHistory, CarbonReport, EmergencyContacts, CompleteProfile, DocumentUpload } from './pages/user';
 
 // Rides Pages
-import { PostRide, SearchRides, RideDetails, MyRides } from './pages/rides';
+import { PostRide, SearchRides, RideDetails, MyRides, EditRide } from './pages/rides';
 
 // Bookings Pages
-import { MyBookings, BookingDetails, Payment } from './pages/bookings';
+import { MyBookings, BookingDetails, Payment, RateBooking, PaymentSuccess, PaymentFailed } from './pages/bookings';
 
 // Chat Pages
 import { Chat } from './pages/chat';
 
 // Tracking Pages
-import { LiveTracking } from './pages/tracking';
+import { LiveTracking, Safety, DriverTracking } from './pages/tracking';
 
 // Admin Pages
-import { AdminDashboard, AdminUsers, AdminRides, AdminReports, AdminVerifications } from './pages/admin';
+import { AdminDashboard, AdminUsers, AdminUserDetails, AdminRides, AdminRideDetails, AdminVerifications, AdminBookings, AdminBookingDetails, AdminSafety } from './pages/admin';
 
 // Protected Route Components
 import ProtectedRoute from './components/ProtectedRoute';
@@ -35,22 +39,27 @@ import AdminRoute from './components/AdminRoute';
 
 function App() {
   return (
-    <AuthProvider>
-      <SocketProvider>
-        <NotificationProvider>
-          <Router>
-            <Routes>
-              {/* Public Routes */}
-              <Route path="/" element={<Home />} />
-              <Route path="/login" element={<Login />} />
-              <Route path="/register" element={<Register />} />
-              <Route path="/verify-otp" element={<VerifyOtp />} />
-              <Route path="/forgot-password" element={<ForgotPassword />} />
-              <Route path="/reset-password" element={<ResetPassword />} />
-              
-              {/* User Protected Routes */}
-              <Route path="/dashboard" element={
-                <ProtectedRoute>
+    <ErrorBoundary>
+      <AuthProvider>
+        <SocketProvider>
+          <NotificationProvider>
+            <ToastProvider>
+              <Router>
+                {/* Global Reassignment Alert Modal */}
+                <ReassignmentAlert />
+                
+                <Routes>
+                {/* Public Routes */}
+                <Route path="/" element={<Home />} />
+                <Route path="/login" element={<Login />} />
+                <Route path="/register" element={<Register />} />
+                <Route path="/verify-otp" element={<VerifyOtp />} />
+                <Route path="/forgot-password" element={<ForgotPassword />} />
+                <Route path="/reset-password" element={<ResetPassword />} />
+                
+                {/* User Protected Routes */}
+                <Route path="/dashboard" element={
+                  <ProtectedRoute>
                   <Layout>
                     <Dashboard />
                   </Layout>
@@ -91,6 +100,13 @@ function App() {
                   </Layout>
                 </ProtectedRoute>
               } />
+              <Route path="/edit-ride/:id" element={
+                <ProtectedRoute>
+                  <Layout>
+                    <EditRide />
+                  </Layout>
+                </ProtectedRoute>
+              } />
               <Route path="/bookings" element={
                 <ProtectedRoute>
                   <Layout>
@@ -114,14 +130,14 @@ function App() {
               } />
               <Route path="/chat" element={
                 <ProtectedRoute>
-                  <Layout>
+                  <Layout showFooter={false}>
                     <Chat />
                   </Layout>
                 </ProtectedRoute>
               } />
               <Route path="/chat/:recipientId" element={
                 <ProtectedRoute>
-                  <Layout>
+                  <Layout showFooter={false}>
                     <Chat />
                   </Layout>
                 </ProtectedRoute>
@@ -147,6 +163,48 @@ function App() {
                   </Layout>
                 </ProtectedRoute>
               } />
+              <Route path="/complete-profile" element={
+                <ProtectedRoute>
+                  <Layout>
+                    <CompleteProfile />
+                  </Layout>
+                </ProtectedRoute>
+              } />
+              <Route path="/user/documents" element={
+                <ProtectedRoute>
+                  <Layout>
+                    <DocumentUpload />
+                  </Layout>
+                </ProtectedRoute>
+              } />
+              <Route path="/settings" element={
+                <ProtectedRoute>
+                  <Layout>
+                    <Settings />
+                  </Layout>
+                </ProtectedRoute>
+              } />
+              <Route path="/trip-history" element={
+                <ProtectedRoute>
+                  <Layout>
+                    <TripHistory />
+                  </Layout>
+                </ProtectedRoute>
+              } />
+              <Route path="/carbon-report" element={
+                <ProtectedRoute>
+                  <Layout>
+                    <CarbonReport />
+                  </Layout>
+                </ProtectedRoute>
+              } />
+              <Route path="/emergency-contacts" element={
+                <ProtectedRoute>
+                  <Layout>
+                    <EmergencyContacts />
+                  </Layout>
+                </ProtectedRoute>
+              } />
               <Route path="/payment/:bookingId" element={
                 <ProtectedRoute>
                   <Layout>
@@ -154,49 +212,131 @@ function App() {
                   </Layout>
                 </ProtectedRoute>
               } />
-              <Route path="/tracking/:rideId" element={
+              <Route path="/tracking/:bookingId" element={
                 <ProtectedRoute>
                   <Layout>
                     <LiveTracking />
                   </Layout>
                 </ProtectedRoute>
               } />
+              <Route path="/tracking/:bookingId/safety" element={
+                <ProtectedRoute>
+                  <Safety />
+                </ProtectedRoute>
+              } />
+              <Route path="/driver-tracking/:rideId" element={
+                <ProtectedRoute>
+                  <Layout>
+                    <DriverTracking />
+                  </Layout>
+                </ProtectedRoute>
+              } />
+              <Route path="/bookings/:id/rate" element={
+                <ProtectedRoute>
+                  <Layout>
+                    <RateBooking />
+                  </Layout>
+                </ProtectedRoute>
+              } />
+              <Route path="/bookings/:bookingId/payment" element={
+                <ProtectedRoute>
+                  <Layout>
+                    <Payment />
+                  </Layout>
+                </ProtectedRoute>
+              } />
+              <Route path="/bookings/:bookingId/success" element={
+                <ProtectedRoute>
+                  <Layout>
+                    <PaymentSuccess />
+                  </Layout>
+                </ProtectedRoute>
+              } />
+              <Route path="/bookings/:bookingId/failed" element={
+                <ProtectedRoute>
+                  <Layout>
+                    <PaymentFailed />
+                  </Layout>
+                </ProtectedRoute>
+              } />
               
               {/* Admin Routes */}
               <Route path="/admin/login" element={<Login />} />
+              <Route path="/admin" element={
+                <AdminRoute>
+                  <AdminLayout>
+                    <AdminDashboard />
+                  </AdminLayout>
+                </AdminRoute>
+              } />
               <Route path="/admin/dashboard" element={
                 <AdminRoute>
-                  <Layout adminTheme>
+                  <AdminLayout>
                     <AdminDashboard />
-                  </Layout>
+                  </AdminLayout>
                 </AdminRoute>
               } />
               <Route path="/admin/users" element={
                 <AdminRoute>
-                  <Layout adminTheme>
+                  <AdminLayout>
                     <AdminUsers />
-                  </Layout>
+                  </AdminLayout>
+                </AdminRoute>
+              } />
+              <Route path="/admin/users/:id" element={
+                <AdminRoute>
+                  <AdminLayout>
+                    <AdminUserDetails />
+                  </AdminLayout>
                 </AdminRoute>
               } />
               <Route path="/admin/rides" element={
                 <AdminRoute>
-                  <Layout adminTheme>
+                  <AdminLayout>
                     <AdminRides />
-                  </Layout>
+                  </AdminLayout>
                 </AdminRoute>
               } />
-              <Route path="/admin/reports" element={
+              <Route path="/admin/rides/:id" element={
                 <AdminRoute>
-                  <Layout adminTheme>
-                    <AdminReports />
-                  </Layout>
+                  <AdminLayout>
+                    <AdminRideDetails />
+                  </AdminLayout>
                 </AdminRoute>
               } />
               <Route path="/admin/licenses" element={
                 <AdminRoute>
-                  <Layout adminTheme>
+                  <AdminLayout>
                     <AdminVerifications />
-                  </Layout>
+                  </AdminLayout>
+                </AdminRoute>
+              } />
+              <Route path="/admin/verifications" element={
+                <AdminRoute>
+                  <AdminLayout>
+                    <AdminVerifications />
+                  </AdminLayout>
+                </AdminRoute>
+              } />
+              <Route path="/admin/bookings" element={
+                <AdminRoute>
+                  <AdminLayout>
+                    <AdminBookings />
+                  </AdminLayout>
+                </AdminRoute>
+              } />
+              <Route path="/admin/bookings/:id" element={
+                <AdminRoute>
+                  <AdminLayout>
+                    <AdminBookingDetails />
+                  </AdminLayout>
+                </AdminRoute>
+              } />
+              <Route path="/admin/safety" element={
+                <AdminRoute>
+                  <AdminLayout>
+                    <AdminSafety />
+                  </AdminLayout>
                 </AdminRoute>
               } />
               
@@ -204,9 +344,11 @@ function App() {
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>
           </Router>
+          </ToastProvider>
         </NotificationProvider>
       </SocketProvider>
     </AuthProvider>
+    </ErrorBoundary>
   );
 }
 
